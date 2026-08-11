@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1f4d">
+  <meta name="description" content="Planilha Nexora — gerenciamento operacional do mercado financeiro.">
+  <title>Planilha Nexora — Gerenciamento</title>
+  <link rel="icon" href="assets/nexora-logo.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="assets/nexora-logo.png" alt="Nexora Gerenciamento">
+        <div>
+          <strong>PLANILHA</strong>
+          <span>NEXORA</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard">Dashboard</button>
+        <button class="nav-item" data-view="session">Nova sessão</button>
+        <button class="nav-item" data-view="operations">Operações</button>
+        <button class="nav-item" data-view="calculator">Calculadora</button>
+        <button class="nav-item" data-view="simulator">Simulador</button>
+        <button class="nav-item" data-view="journal">Diário operacional</button>
+        <button class="nav-item" data-view="performance">Performance</button>
+        <button class="nav-item" data-view="capital">Capital</button>
+        <button class="nav-item" data-view="assets">Ativos</button>
+        <button class="nav-item" data-view="settings">Configurações</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="status-dot"></span>
+        <span>Modo local ativo</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">GERENCIAMENTO OPERACIONAL</p>
+          <h1 id="page-title">Dashboard</h1>
+        </div>
+        <div class="top-actions">
+          <button class="btn secondary" id="export-btn">Exportar backup</button>
+          <label class="btn secondary file-btn">Importar backup
+            <input type="file" id="import-file" accept=".json">
+          </label>
+          <button class="btn primary" data-view-target="session">+ Nova sessão</button>
+        </div>
+      </header>
+
+      <section id="view-dashboard" class="view active"></section>
+      <section id="view-session" class="view"></section>
+      <section id="view-operations" class="view"></section>
+      <section id="view-calculator" class="view"></section>
+      <section id="view-simulator" class="view"></section>
+      <section id="view-journal" class="view"></section>
+      <section id="view-performance" class="view"></section>
+      <section id="view-capital" class="view"></section>
+      <section id="view-assets" class="view"></section>
+      <section id="view-settings" class="view"></section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
