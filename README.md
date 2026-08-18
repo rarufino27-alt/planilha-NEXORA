@@ -44,3 +44,41 @@ O sistema não chama automaticamente toda diferença entre resultado bruto e lí
 4. Conectar Supabase/Auth.
 5. Adicionar importação do histórico do MT5.
 6. Depois construir integração automática, se a plataforma escolhida disponibilizar o mecanismo adequado.
+
+
+## V1.2 — Projeção por etapa e registro manual de sessões
+
+A página Projeção & Objetivos foi ajustada para trabalhar com a etapa atual do capital.
+
+Exemplo:
+- Meta principal: US$15.000
+- Saldo atual: US$100
+- Próxima meta: US$200
+- Busca diária: 30%
+- Meta financeira do dia: US$30
+
+A Nexora passa a informar automaticamente, para cada perfil operacional:
+- lote de entrada projetado;
+- valor da busca diária;
+- Pontos Nexora necessários para atingir a busca líquida, considerando a comissão cadastrada;
+- sessões projetadas até a próxima etapa;
+- sessões projetadas até a meta principal.
+
+O usuário registra manualmente cada sessão realizada, informando resultado positivo ou negativo, quantidade de sessões e, opcionalmente, os pontos reais. O realizado permanece separado da projeção.
+
+A integração com Supabase será feita na próxima etapa, preservando essa estrutura para sincronização entre celular, computador, Bot e banco central.
+
+
+## Regra final da projeção
+
+A busca diária padrão da Nexora é **30% do saldo atual**. O percentual permanece constante; o valor financeiro não.
+
+Exemplo:
+
+- Saldo US$100 → busca US$30 → saldo projetado US$130
+- Saldo US$130 → busca US$39 → saldo projetado US$169
+- Saldo US$169 → busca US$50,70 → saldo projetado US$219,70
+
+Ao registrar manualmente uma sessão, o resultado real passa a atualizar o saldo de referência. A próxima sessão recalcula automaticamente:
+
+**novo saldo → 30% de busca → novo lote → novos pontos necessários.**
