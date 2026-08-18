@@ -125,3 +125,16 @@ Restauradas as rotinas de Operações e Calculadora que foram removidas acidenta
 - Diário operacional livre e opcional por data.
 - Configurações centralizam gerenciamento, projeto, lotes, capital e ativos.
 - Projeto pode ser criado novamente ou excluído pelas Configurações.
+
+
+## V1.6 — Ajuste fino de Projeção e Sessão Operacional
+
+- A projeção agora possui seleção explícita da busca diária (%) usada no cálculo.
+- A projeção usa o perfil de gerenciamento/lote selecionado para calcular lote e pontos de referência.
+- Metas secundárias são geradas a partir da meta principal e podem ser ajustadas individualmente.
+- Cada meta secundária possui período previsto em sessões e estimativa aproximada em semanas.
+- O período previsto pode ser alterado manualmente pelo usuário.
+- O status da etapa pode ser avançado manualmente pelo usuário.
+- A projeção operacional recalcula busca em US$, lote e pontos conforme o saldo projetado.
+- A Sessão Operacional passou a mostrar busca em US$, lote sugerido e o plano registrado da sessão.
+- Abertura e encerramento continuam sendo o único fluxo de controle da sessão.
