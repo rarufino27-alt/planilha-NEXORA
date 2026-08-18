@@ -161,3 +161,13 @@ Restauradas as rotinas de Operações e Calculadora que foram removidas acidenta
 - Projeção operacional utiliza o saldo acumulado real como ponto de partida de cada sessão.
 - Sessões reais propagam seus ganhos e perdas para a próxima linha da projeção.
 - Depósitos e saques registrados também entram no cálculo do saldo.
+
+
+## V1.9 — Plano operacional diário e custos
+
+- Dashboard exibe permanentemente saldo atual, meta diária em %, busca líquida em US$, lote sugerido e pontos necessários.
+- Pontos da meta diária são calculados sobre o valor bruto necessário para cobrir a comissão configurada do ativo e ainda entregar a busca líquida desejada.
+- Projeção operacional até a meta principal remove lote e pontos da tabela; esses parâmetros continuam calculados internamente e aparecem onde a operação é planejada/registrada.
+- Para sessões já realizadas, Saldo se Win/Saldo se Loss passa a mostrar somente o cenário compatível com o resultado real; o saldo real alcançado permanece visível.
+- O saldo atual continua baseado no resultado líquido efetivamente registrado nas operações. Isso evita descontar a comissão duas vezes quando o valor informado no lançamento vier do campo líquido do MT5.
+- Dashboard e Projeção recalculam o saldo antes de renderizar.

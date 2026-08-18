@@ -158,6 +158,15 @@ function pointsFromPrices(entry, exit, direction=1, a=asset()){
   return ((Number(exit)-Number(entry)) * (direction===-1 ? -1 : 1)) * (a.nexoraPointsPerPriceUnit||100);
 }
 function commission(lot,a=asset()){ return (Number(lot)||0)*(a.commissionPerLotRoundTurn||0); }
+function dailyOperationalPlan(balance=calculatedAccountBalance(), profile=state.settings.defaultProfile, assetSymbol=state.settings.defaultAsset, percent=state.settings.minDailySearchPercent??20){
+  const a=state.assets[assetSymbol]||asset();
+  const netTarget=Math.max(0,Number(balance)||0)*Math.max(0,Number(percent)||0)/100;
+  const lot=lotSuggestion(balance,profile).lot;
+  const fees=commission(lot,a);
+  const grossRequired=netTarget+fees;
+  const points=lot>0?moneyToPoints(grossRequired,lot,a):0;
+  return {balance,percent:Number(percent)||0,netTarget,lot,fees,grossRequired,points};
+}
 
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function sessionTotals(date=todayStr()){
@@ -179,7 +188,7 @@ function overall(){
   const wins=ops.filter(o=>(Number(o.net)||0)>0).length;
   const losses=ops.filter(o=>(Number(o.net)||0)<0).length;
   const peakSeries=[];
-  let eq=state.settings.initialBalance;
+  let eq=projectInitialBalance();
   let peak=eq, maxDD=0;
   [...ops].sort((a,b)=>(a.timestamp||"").localeCompare(b.timestamp||"")).forEach(o=>{
     eq += Number(o.net)||0; peak=Math.max(peak,eq); maxDD=Math.max(maxDD, peak ? (peak-eq)/peak*100:0);
@@ -267,8 +276,10 @@ function cardMetric(label,value,sub="",cls=""){
 }
 
 function renderDashboard(){
+  rebuildCurrentBalance();
   const s=sessionTotals(), o=overall(), bal=Number(state.settings.currentBalance)||0;
   const profile=state.settings.defaultProfile, sug=lotSuggestion(bal,profile);
+  const plan=dailyOperationalPlan(bal,profile,state.settings.defaultAsset,state.settings.minDailySearchPercent??20);
   const initial=projectInitialBalance();
   const generalPct=initial?(bal-initial)/initial*100:0;
   const closed=[...state.sessions].filter(x=>x.status==="closed").sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
@@ -285,11 +296,13 @@ function renderDashboard(){
       <div class="card">
         <div class="card-header"><div><h2>Gerenciamento atual</h2><p>${esc(profile)} · ${esc(state.settings.defaultAsset)}</p></div></div>
         ${sug.warning?`<div class="callout"><strong>${esc(sug.warning)}</strong></div>`:`<div class="stat-strip">
-          <div><span class="kicker">Lote sugerido</span><div class="v">${num(sug.lot,2)}</div></div>
-          <div><span class="kicker">Busca mínima</span><div class="v">${num(state.settings.minDailySearchPercent??20,1)}%</div></div>
-          <div><span class="kicker">Meta mínima</span><div class="v">${money(bal*(state.settings.minDailySearchPercent??20)/100)}</div></div>
-          <div><span class="kicker">Stop</span><div class="v">${num(state.settings.dailyStopPoints,0)} pts</div></div>
-        </div>`}
+          <div><span class="kicker">Saldo atual</span><div class="v">${money(bal)}</div></div>
+          <div><span class="kicker">Meta do dia</span><div class="v">${num(state.settings.minDailySearchPercent??20,1)}%</div></div>
+          <div><span class="kicker">Busca líquida</span><div class="v">${money(plan.netTarget)}</div></div>
+          <div><span class="kicker">Lote sugerido</span><div class="v">${num(plan.lot,2)}</div></div>
+          <div><span class="kicker">Pontos a buscar</span><div class="v">${num(plan.points,0)} pts</div></div>
+        </div>
+        <div class="callout section-space"><strong>Meta operacional líquida: ${money(plan.netTarget)}</strong><span class="note">Para atingir esse valor líquido, o plano considera ${money(plan.fees)} de comissão e exige aproximadamente ${num(plan.points,0)} pontos brutos no lote sugerido.</span></div>`}
       </div>
       <div class="card">
         <div class="card-header"><div><h2>Evolução operacional</h2><p>Resultado percentual por sessão e resultado geral.</p></div></div>
@@ -416,8 +429,10 @@ function projectionSession(p,profile,balance){
   const dailyTarget=Number(balance||0)*percent/100;
   const lot=calcLot(balance,profile||p.activeProfile);
   const a=state.assets[p.asset]||asset();
-  const points=lot>0 ? moneyToPoints(dailyTarget,lot,a) : 0;
-  return {dailyTarget,net:dailyTarget,lot,points};
+  const fees=commission(lot,a);
+  const grossRequired=dailyTarget+fees;
+  const points=lot>0 ? moneyToPoints(grossRequired,lot,a) : 0;
+  return {dailyTarget,net:dailyTarget,lot,fees,grossRequired,points};
 }
 function milestoneTargets(initial,target,count=5,customTargets=[]){
   initial=Number(initial)||0; target=Number(target)||0; count=Math.max(1,Math.floor(Number(count)||5));
@@ -479,7 +494,9 @@ function projectSessionRows(p,real,target){
     const searchMoney=before*plannedPercent/100;
     const lot=calcLot(before,p.activeProfile);
     const a=state.assets[actual?.asset||p.asset]||asset();
-    const points=lot>0?moneyToPoints(searchMoney,lot,a):0;
+    const fees=commission(lot,a);
+    const grossRequired=searchMoney+fees;
+    const points=lot>0?moneyToPoints(grossRequired,lot,a):0;
     const stopPoints=Number(actual?.stopPoints??state.settings.dailyStopPoints)||0;
     const stopMoney=lot>0?pointsToMoney(stopPoints,lot,a):0;
     const winBalance=Math.min(target,before+searchMoney);
@@ -493,7 +510,7 @@ function projectSessionRows(p,real,target){
 
     rows.push({
       n:i+1,before,percent:plannedPercent,realPct,goal:searchMoney,real:actualNet,
-      lot,points,winBalance,lossBalance,actualAfter,status,sessionId:actual?.id||null
+      lot,points,fees,grossRequired,winBalance,lossBalance,actualAfter,status,sessionId:actual?.id||null
     });
 
     runningBalance=actual?actualAfter:winBalance;
@@ -504,8 +521,9 @@ function projectSessionRows(p,real,target){
 }
 
 function renderProjection(){
+  rebuildCurrentBalance();
   const p=ensureProjectionState();
-  const real=calculatedAccountBalance();
+  const real=Number(state.settings.currentBalance)||0;
   const initial=Number(p.initialBalance)||0,target=Number(p.target)||0;
   const stages=projectionStages(p);
   const stage=currentProjectionStage(p,real);
@@ -556,26 +574,30 @@ function renderProjection(){
     </div>
 
     <div class="card section-space">
-      <div class="card-header"><div><h2>Projeção operacional até a meta principal</h2><p>A projeção é recalculada sessão por sessão. Se a meta era US$20 e o resultado real foi US$40, a próxima sessão parte automaticamente do saldo real alcançado.</p></div></div>
+      <div class="card-header"><div><h2>Projeção operacional até a meta principal</h2><p>O trajeto é recalculado a cada sessão real. A busca em US$ é líquida; os pontos necessários incluem a comissão configurada do ativo.</p></div></div>
       <div class="table-wrap"><table><thead><tr>
         <th>Sessão</th><th>Saldo inicial do dia</th><th>% Busca</th><th>% Real</th><th>$ Busca</th><th>$ Real</th>
-        <th>Lote de entrada</th><th>Pontos de busca</th><th>Saldo se Win</th><th>Saldo se Loss</th><th>Saldo real</th><th>Status</th>
+        <th>Saldo se Win</th><th>Saldo se Loss</th><th>Saldo real</th><th>Status</th>
       </tr></thead><tbody>
-      ${rows.map(r=>`<tr>
+      ${rows.map(r=>{
+        const actual=r.real!==null;
+        const isWin=actual&&r.real>0, isLoss=actual&&r.real<0;
+        const winCell=actual?(isWin?money(r.actualAfter):"—"):money(r.winBalance);
+        const lossCell=actual?(isLoss?money(r.actualAfter):"—"):money(r.lossBalance);
+        return `<tr>
         <td>${r.n}</td>
         <td>${money(r.before)}</td>
         <td>${num(r.percent,1)}%</td>
         <td class="${r.realPct===null?'':r.realPct>=0?'positive':'negative'}">${r.realPct===null?'—':pct(r.realPct)}</td>
         <td>${money(r.goal)}</td>
         <td class="${r.real===null?'':r.real>=0?'positive':'negative'}">${r.real===null?'—':money(r.real)}</td>
-        <td>${num(r.lot,2)}</td>
-        <td>${num(r.points,0)}</td>
-        <td>${money(r.winBalance)}</td>
-        <td>${money(r.lossBalance)}</td>
+        <td>${winCell}</td>
+        <td>${lossCell}</td>
         <td class="${r.actualAfter===null?'':r.actualAfter>=r.before?'positive':'negative'}">${r.actualAfter===null?'—':money(r.actualAfter)}</td>
         <td><span class="pill ${r.status==="CONCLUÍDA"||r.status==="AVANÇADA"?"green":r.status==="PRÓXIMA"?"amber":""}">${r.status}</span>
         ${r.status!=="CONCLUÍDA"&&r.status!=="AVANÇADA"?`<button class="btn secondary" data-advance-projection-row="${r.n-1}">Avançar</button>`:""}</td>
-      </tr>`).join("")}
+      </tr>`;
+      }).join("")}
       </tbody></table></div>
     </div>
 
