@@ -106,3 +106,22 @@ Restauradas as rotinas de Operações e Calculadora que foram removidas acidenta
 - Depósitos e saques movidos para Configurações > Depósitos e saques.
 - Cadastro de ativos movido para Configurações > Ativos.
 - Menu lateral reduzido, removendo Capital e Ativos.
+
+
+## V1.5 — Fluxo operacional refinado
+
+- Dashboard sem escala de lote.
+- Performance integrada ao Dashboard; menu Performance removido.
+- Evolução operacional por sessão com percentual e resultado geral.
+- Gráfico consolidado por dia operacional.
+- Sessão operacional com abertura e encerramento; sessão numerada sequencialmente por dia.
+- Histórico definitivo somente após encerramento da sessão.
+- Seleção de sessão exibe quantidade de operações e resultado final.
+- Edição de sessão e operações concentrada em Sessão operacional.
+- Operações bloqueadas enquanto não houver sessão aberta.
+- Operações sem histórico próprio na página; última operação permanece no rodapé.
+- Projeção baseada no projeto: saldo inicial → metas secundárias → meta principal.
+- Quantidade de metas secundárias configurável.
+- Diário operacional livre e opcional por data.
+- Configurações centralizam gerenciamento, projeto, lotes, capital e ativos.
+- Projeto pode ser criado novamente ou excluído pelas Configurações.

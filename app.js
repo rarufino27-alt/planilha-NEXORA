@@ -41,6 +41,7 @@ const defaultState = {
   activeSessionId: null,
   operations: [],
   capitalMovements: [],
+  journalEntries: [],
   projection: {
     name: "Projeto principal",
     initialBalance: 60,
@@ -246,49 +247,55 @@ function cardMetric(label,value,sub="",cls=""){
 
 function renderDashboard(){
   const s=sessionTotals(), o=overall(), bal=Number(state.settings.currentBalance)||0;
-  const profile=state.settings.defaultProfile, lot=calcLot(bal,profile), a=asset();
-  const initial=Number(state.settings.initialBalance)||0, capDiff=bal-initial;
-  const rows=[]; const base=Math.max(50,Math.floor(bal/50)*50);
-  for(let i=-2;i<=8;i++){ const b=Math.max(100,base+i*25); rows.push({b,lot:calcLot(b,profile)}); }
+  const profile=state.settings.defaultProfile, sug=lotSuggestion(bal,profile);
+  const initial=Number(state.settings.initialBalance)||0;
+  const generalPct=initial?(bal-initial)/initial*100:0;
+  const closed=[...state.sessions].filter(x=>x.status==="closed").sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
+  const days=operationalDays();
   document.getElementById("view-dashboard").innerHTML=`
     <div class="grid grid-4">
       ${cardMetric("Saldo atual",money(bal),`Inicial ${money(initial)}`)}
       ${cardMetric("Resultado hoje",money(s.net),`${num(s.points,0)} pontos`,s.net>=0?"positive":"negative")}
-      ${cardMetric("Performance",pct(initial?capDiff/initial*100:0),"sobre o capital inicial",capDiff>=0?"positive":"negative")}
+      ${cardMetric("Performance geral",pct(generalPct),"saldo atual × capital inicial",generalPct>=0?"positive":"negative")}
       ${cardMetric("Win rate",pct(o.winRate),`${o.wins} wins / ${o.losses} losses`)}
     </div>
     <div class="grid grid-2 section-space">
       <div class="card">
-        <div class="card-header"><div><h2>Gerenciamento atual</h2><p>${esc(a.name)} · ${esc(profile)}</p></div><span class="pill">${num(lot,2)} lote</span></div>
-        <div class="stat-strip">
-          <div><span class="kicker">Saldo</span><div class="v">${money(bal)}</div></div>
-          <div><span class="kicker">Lote de entrada</span><div class="v">${num(lot,2)}</div></div>
-          <div><span class="kicker">100 pts</span><div class="v">${money(pointsToMoney(100,lot,a))}</div></div>
-          <div><span class="kicker">Stop diário</span><div class="v">${num(state.settings.dailyStopPoints,0)} pts</div></div>
-        </div>
-        <div class="callout section-space"><strong>Gerenciamento por perfil</strong><span class="note">O lote sugerido vem da tabela editável do perfil selecionado em Configurações.</span></div>
+        <div class="card-header"><div><h2>Gerenciamento atual</h2><p>${esc(profile)} · ${esc(state.settings.defaultAsset)}</p></div></div>
+        ${sug.warning?`<div class="callout"><strong>${esc(sug.warning)}</strong></div>`:`<div class="stat-strip">
+          <div><span class="kicker">Lote sugerido</span><div class="v">${num(sug.lot,2)}</div></div>
+          <div><span class="kicker">Busca mínima</span><div class="v">${num(state.settings.minDailySearchPercent??20,1)}%</div></div>
+          <div><span class="kicker">Meta mínima</span><div class="v">${money(bal*(state.settings.minDailySearchPercent??20)/100)}</div></div>
+          <div><span class="kicker">Stop</span><div class="v">${num(state.settings.dailyStopPoints,0)} pts</div></div>
+        </div>`}
       </div>
       <div class="card">
-        <div class="card-header"><div><h2>Escala de lote</h2><p>${esc(profile)} · tabela de gerenciamento</p></div><span class="pill green">${esc(profile)}</span></div>
-        <div class="table-wrap"><table><thead><tr><th>Saldo</th><th>Lote</th></tr></thead><tbody>
-          ${rows.map(r=>`<tr ${Math.abs(r.b-bal)<25?'style="background:var(--panel)"':''}><td>${money(r.b)}</td><td><strong>${num(r.lot,2)}</strong></td></tr>`).join("")}
+        <div class="card-header"><div><h2>Evolução operacional</h2><p>Resultado percentual por sessão e resultado geral.</p></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Data</th><th>Resultado</th><th>% da sessão</th></tr></thead><tbody>
+        ${closed.length?closed.slice(-12).map((ss,i)=>{const t=sessionSummary(ss.id), n=operationalSessionNumber(ss.date,ss.id);return `<tr><td>${n}</td><td>${ss.date}</td><td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td><td class="${sessionPercent(ss)>=0?'positive':'negative'}">${pct(sessionPercent(ss))}</td></tr>`}).join(""):`<tr><td colspan="4"><div class="empty">Nenhuma sessão encerrada.</div></td></tr>`}
         </tbody></table></div>
+        <div class="callout section-space"><strong>Resultado geral: ${pct(generalPct)}</strong><span class="note">Calculado sobre o capital inicial do projeto/conta.</span></div>
       </div>
     </div>
-    <div class="grid grid-3 section-space">
-      <div class="card"><div class="card-header"><div><h2>Sessão atual</h2><p>Operações agrupadas.</p></div></div>
-        ${state.activeSessionId?`<div class="big-number">${sessionSummary(state.activeSessionId).count}</div><div class="note">operações na sessão aberta</div>`:`<div class="empty">Nenhuma sessão aberta.</div>`}
-      </div>
-      <div class="card"><div class="card-header"><div><h2>Hoje</h2><p>Resultado operacional.</p></div></div>
-        <div class="big-number ${s.net>=0?'positive':'negative'}">${money(s.net)}</div><div class="note">${s.count} operações · ${s.wins} wins · ${s.losses} losses</div>
-      </div>
-      <div class="card"><div class="card-header"><div><h2>Capital</h2><p>Saldo operacional.</p></div></div>
-        <div class="big-number">${money(bal)}</div><div class="note">Depósitos: ${money(state.capitalMovements.filter(x=>x.type==="deposit").reduce((s,x)=>s+Number(x.amount),0))}<br>Saques: ${money(state.capitalMovements.filter(x=>x.type==="withdraw").reduce((s,x)=>s+Number(x.amount),0))}</div>
+    <div class="card section-space">
+      <div class="card-header"><div><h2>Performance</h2><p>Resumo integrado ao Dashboard.</p></div></div>
+      <div class="stat-strip">
+        <div><span class="kicker">Resultado acumulado</span><div class="v ${o.net>=0?'positive':'negative'}">${money(o.net)}</div></div>
+        <div><span class="kicker">Drawdown máximo</span><div class="v ${o.maxDD>0?'negative':'positive'}">${pct(o.maxDD)}</div></div>
+        <div><span class="kicker">Wins</span><div class="v">${o.wins}</div></div>
+        <div><span class="kicker">Losses</span><div class="v">${o.losses}</div></div>
       </div>
     </div>
-    <div class="card section-space"><div class="card-header"><div><h2>Evolução operacional</h2><p>Resultado líquido acumulado.</p></div><span class="pill">${o.count} operações</span></div>${renderMiniChart()}</div>`;
+    <div class="card section-space">
+      <div class="card-header"><div><h2>Gráfico por dia operacional</h2><p>Cada barra representa o resultado percentual consolidado daquele dia.</p></div></div>
+      ${renderOperationalDayChart(days)}
+    </div>`;
 }
-
+function renderOperationalDayChart(days){
+  if(!days.length)return `<div class="empty">Nenhum dia operacional encerrado.</div>`;
+  const max=Math.max(...days.map(d=>Math.abs(d.pct)),1);
+  return `<div class="chart">${days.slice(-20).map(d=>`<div class="bar ${d.pct<0?'neg':''}" title="${d.date}: ${pct(d.pct)}" style="height:${Math.max(8,Math.abs(d.pct)/max*180)}px"><span>${d.date.slice(5)}</span></div>`).join("")}</div>`;
+}
 function renderMiniChart(){
   const ops=[...state.operations].sort((a,b)=>(a.timestamp||"").localeCompare(b.timestamp||""));
   if(!ops.length) return `<div class="empty">Nenhuma operação registrada ainda.</div>`;
@@ -299,48 +306,63 @@ function renderMiniChart(){
 }
 
 function renderSession(){
-  const a=asset(), bal=Number(state.settings.currentBalance)||0;
+  const bal=Number(state.settings.currentBalance)||0;
   const active=state.activeSessionId?state.sessions.find(x=>x.id===state.activeSessionId):null;
   const t=active?sessionSummary(active.id):null;
+  const defaultAsset=Object.keys(state.assets).length===1?Object.keys(state.assets)[0]:state.settings.defaultAsset;
+  const profile=state.settings.defaultProfile;
   document.getElementById("view-session").innerHTML=`
     <div class="grid grid-2">
-      <div class="card"><div class="card-header"><div><h2>Abertura da sessão</h2><p>Abra a sessão primeiro; depois todas as operações ficam vinculadas a ela.</p></div>${active?`<span class="pill amber">ABERTA</span>`:""}</div>
+      <div class="card">
+        <div class="card-header"><div><h2>${active?"Sessão operacional em andamento":"Abertura de sessão"}</h2><p>${active?"A sessão permanece em andamento até ser encerrada.":"Os dados abaixo serão armazenados somente quando a sessão for iniciada."}</p></div>${active?`<span class="pill amber">ABERTA · SESSÃO ${operationalSessionNumber(active.date,active.id)}</span>`:""}</div>
         <form id="session-form" class="form-grid">
-          <div class="field"><label>Data</label><input type="date" name="date" value="${todayStr()}" required></div><div class="field"><label>Sessão</label><select name="sessionId">${state.sessions.filter(s=>s.status==="open").map(s=>`<option value="${s.id}" ${s.id===state.activeSessionId?"selected":""}>${s.date} · ${esc(s.strategy||"Sessão")}</option>`).join("")}</select></div>
-          <div class="field"><label>Horário de início</label><input type="time" name="startTime" value="${new Date().toTimeString().slice(0,5)}" required></div>
-          <div class="field"><label>Ativo</label><select name="asset">${Object.values(state.assets).map(x=>`<option ${x.symbol===state.settings.defaultAsset?"selected":""}>${x.symbol}</option>`).join("")}</select></div>
-          <div class="field"><label>Perfil</label><select name="profile">${Object.keys(state.profiles).map(x=>`<option ${x===state.settings.defaultProfile?"selected":""}>${x}</option>`).join("")}</select></div>
-          <div class="field"><label>Estratégia / setup</label><input name="strategy"></div>
-          <div class="field"><label>Objetivo (pontos)</label><input type="number" name="targetPoints" value="${state.settings.dailyTargetPoints}"></div>
-          <div class="field"><label>Stop operacional</label><input type="number" name="stopPoints" value="${state.settings.dailyStopPoints}"></div>
-          <div class="field full"><label>Contexto inicial</label><textarea name="context"></textarea></div>
-          <div class="actions full"><button class="btn primary" ${active?"disabled":""}>${active?"Sessão já aberta":"Abrir sessão"}</button></div>
+          <div class="field"><label>Data</label><input type="date" name="date" value="${active?active.date:todayStr()}" ${active?"disabled":""} required></div>
+          <div class="field"><label>Hora de início</label><input type="time" name="startTime" value="${active?active.startTime:new Date().toTimeString().slice(0,5)}" ${active?"disabled":""} required></div>
+          <div class="field"><label>Ativo</label><select name="asset" ${active?"disabled":""}>${Object.values(state.assets).map(x=>`<option ${x.symbol===(active?.asset||defaultAsset)?"selected":""}>${esc(x.symbol)}</option>`).join("")}</select></div>
+          <div class="field"><label>Perfil de gerenciamento</label><select name="profile" ${active?"disabled":""}>${Object.keys(state.settings.lotRules).map(x=>`<option ${x===(active?.profile||profile)?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+          <div class="field"><label>% de busca do dia</label><input type="number" name="searchPercent" min="0" step="0.1" value="${active?active.searchPercent:(state.settings.minDailySearchPercent??20)}" ${active?"disabled":""}></div>
+          <div class="field"><label>Pontos de objetivo Take</label><input type="number" name="targetPoints" value="${active?.targetPoints??state.settings.dailyTargetPoints}" ${active?"disabled":""}></div>
+          <div class="field"><label>Pontos de Stop</label><input type="number" name="stopPoints" value="${active?.stopPoints??state.settings.dailyStopPoints}" ${active?"disabled":""}></div>
+          <div class="field full"><label>Estratégia / Setup / Contexto inicial <span class="note">(opcional)</span></label><textarea name="context" ${active?"disabled":""}>${esc(active?.context||"")}</textarea></div>
+          <div class="actions full">${active?`<button type="button" class="btn danger" data-close-session="${active.id}">Encerrar sessão</button>`:`<button class="btn primary">Iniciar sessão</button>`}</div>
         </form>
       </div>
-      <div class="card"><div class="card-header"><div><h2>${active?"Sessão em andamento":"Referência"}</h2><p>${active?"Resumo atualizado pelas operações vinculadas.":"Baseada no saldo atual."}</p></div></div>
+      <div class="card">
+        <div class="card-header"><div><h2>${active?"Resumo da sessão atual":"Sessões do projeto"}</h2><p>${active?"As operações entram automaticamente nesta sessão.":"Selecione uma sessão encerrada para consultar seu resultado."}</p></div></div>
         ${active?`
           <div class="stat-strip">
+            <div><span class="kicker">Sessão</span><div class="v">${operationalSessionNumber(active.date,active.id)}</div></div>
             <div><span class="kicker">Operações</span><div class="v">${t.count}</div></div>
-            <div><span class="kicker">Exposição</span><div class="v">${money(t.exposure)}</div></div>
             <div><span class="kicker">Pontos</span><div class="v">${num(t.points,0)}</div></div>
             <div><span class="kicker">Resultado</span><div class="v ${t.net>=0?'positive':'negative'}">${money(t.net)}</div></div>
           </div>
-          <div class="actions section-space"><button class="btn primary" data-view-target="operations">Registrar operação</button><button class="btn danger" data-close-session="${active.id}">Encerrar sessão</button></div>
-          ${renderSessionOperations(active.id)}
-        `:`
-          <div class="stat-strip"><div><span class="kicker">Saldo</span><div class="v">${money(bal)}</div></div><div><span class="kicker">Lote</span><div class="v">${num(calcLot(bal,state.settings.defaultProfile),2)}</div></div><div><span class="kicker">500 pts</span><div class="v">${money(pointsToMoney(500,calcLot(bal,state.settings.defaultProfile),a))}</div></div><div><span class="kicker">Comissão</span><div class="v">${money(commission(calcLot(bal,state.settings.defaultProfile),a))}</div></div></div>
-          <div class="callout section-space"><strong>Fluxo</strong><span class="note">Abra → registre operações → encerre. Ao encerrar, o resumo entra automaticamente na Projeção & Objetivos.</span></div>
-        `}
+          <div class="callout section-space"><strong>Registrar operação</strong><span class="note">A operação é registrada na página Operações enquanto esta sessão estiver aberta.</span></div>
+        `:`<div class="empty">Nenhuma sessão em andamento.</div>`}
       </div>
     </div>
-    <div class="card section-space"><div class="card-header"><div><h2>Histórico de sessões</h2><p>Todos os registros permanecem editáveis.</p></div></div>${renderSessionsTable()}</div>`;
+    <div class="card section-space">
+      <div class="card-header"><div><h2>Histórico de sessões</h2><p>Somente sessões encerradas entram definitivamente no histórico.</p></div></div>
+      ${renderSessionsTable()}
+    </div>
+    <div id="session-detail-panel"></div>`;
+
   const form=document.getElementById("session-form");
   if(form) form.onsubmit=e=>{
-    e.preventDefault(); if(state.activeSessionId){toast("Já existe uma sessão aberta.");return;}
-    const f=new FormData(e.target);
-    const item={id:uid(),date:f.get("date"),startTime:f.get("startTime"),endTime:"",asset:f.get("asset"),profile:f.get("profile"),strategy:f.get("strategy"),targetPoints:Number(f.get("targetPoints")),stopPoints:Number(f.get("stopPoints")),context:f.get("context"),journal:"",status:"open",balanceBefore:Number(state.settings.currentBalance)||0,createdAt:new Date().toISOString()};
-    state.sessions.unshift(item); state.activeSessionId=item.id; save(); toast("Sessão aberta."); render();
+    e.preventDefault();
+    if(state.activeSessionId){toast("Já existe uma sessão aberta.");return;}
+    const f=new FormData(form), date=f.get("date");
+    const item={id:uid(),date,startTime:f.get("startTime"),endTime:"",asset:f.get("asset"),profile:f.get("profile"),searchPercent:Number(f.get("searchPercent"))||20,targetPoints:Number(f.get("targetPoints"))||0,stopPoints:Number(f.get("stopPoints"))||0,context:f.get("context")||"",journal:"",status:"open",balanceBefore:Number(state.settings.currentBalance)||0,createdAt:new Date().toISOString(),sessionNumber:state.sessions.filter(s=>s.date===date).length+1};
+    state.sessions.push(item); state.activeSessionId=item.id; save(); toast(`Sessão ${item.sessionNumber} iniciada.`); render();
   };
+}
+function renderSessionDetail(id){
+  const s=state.sessions.find(x=>x.id===id); if(!s)return "";
+  const t=sessionSummary(id);
+  return `<div class="card section-space"><div class="card-header"><div><h2>Sessão ${operationalSessionNumber(s.date,s.id)} · ${s.date}</h2><p>${s.startTime}${s.endTime?` → ${s.endTime}`:""} · ${esc(s.asset)}</p></div><span class="pill green">ENCERRADA</span></div>
+    <div class="stat-strip"><div><span class="kicker">Operações</span><div class="v">${t.count}</div></div><div><span class="kicker">Pontos</span><div class="v">${num(t.points,0)}</div></div><div><span class="kicker">Resultado</span><div class="v ${t.net>=0?'positive':'negative'}">${money(t.net)}</div></div><div><span class="kicker">% da sessão</span><div class="v">${pct(sessionPercent(s))}</div></div></div>
+    <div class="actions section-space"><button class="btn secondary" data-edit-session="${s.id}">Editar sessão</button></div>
+    ${renderSessionOperations(id)}
+  </div>`;
 }
 function renderSessionOperations(id){
   const ops=sessionOperations(id);
@@ -348,42 +370,101 @@ function renderSessionOperations(id){
   return `<div class="table-wrap section-space"><table><thead><tr><th>Hora</th><th>Ativo</th><th>Dir.</th><th>Lote</th><th>Pontos</th><th>Líquido</th><th>Ação</th></tr></thead><tbody>${ops.map(o=>`<tr><td>${o.time||"-"}</td><td>${esc(o.asset)}</td><td>${o.direction===1?"BUY":"SELL"}</td><td>${num(o.lot,2)}</td><td>${num(o.points,0)}</td><td class="${o.net>=0?'positive':'negative'}">${money(o.net)}</td><td><button class="btn secondary" data-edit-op="${o.id}">Editar</button></td></tr>`).join("")}</tbody></table></div>`;
 }
 
+
+function ensureProjectionState(){
+  if(!state.projection) state.projection={name:"Projeto principal",initialBalance:60,target:1000,dailyPercent:30,activeProfile:state.settings.defaultProfile,asset:state.settings.defaultAsset,secondaryCount:5};
+  if(state.projection.secondaryCount===undefined) state.projection.secondaryCount=5;
+  if(!state.projection.dailyPercent) state.projection.dailyPercent=30;
+  return state.projection;
+}
+function projectionSession(p,profile,balance){
+  const percent=Number(p.dailyPercent)||30;
+  const dailyTarget=Number(balance||0)*percent/100;
+  const lot=calcLot(balance,profile);
+  const a=state.assets[p.asset]||asset();
+  const points=lot>0 ? moneyToPoints(dailyTarget,lot,a) : 0;
+  return {dailyTarget,net:dailyTarget,lot,points};
+}
+function milestoneTargets(initial,target,count=5){
+  initial=Number(initial)||0; target=Number(target)||0; count=Math.max(1,Math.floor(Number(count)||5));
+  if(target<=initial)return [];
+  const out=[];
+  for(let i=1;i<=count;i++){
+    const from=initial+(target-initial)*(i-1)/count;
+    const to=initial+(target-initial)*i/count;
+    out.push({from,to});
+  }
+  return out;
+}
+function currentProjectionStage(p,real){
+  const stages=milestoneTargets(p.initialBalance,p.target,p.secondaryCount);
+  return stages.find(x=>real<x.to)||null;
+}
+function operationalSessionNumber(date,id){
+  const same=state.sessions.filter(s=>s.date===date).sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
+  const idx=same.findIndex(s=>s.id===id);
+  return idx>=0?idx+1:same.length+1;
+}
+function sessionPercent(s){
+  const base=Number(s.balanceBefore)||0;
+  const t=sessionSummary(s.id);
+  return base?t.net/base*100:0;
+}
+function operationalDays(){
+  const days={};
+  state.sessions.filter(s=>s.status==="closed").forEach(s=>{
+    const t=sessionSummary(s.id);
+    if(!days[s.date])days[s.date]={date:s.date,net:0,base:Number(s.balanceBefore)||0,sessions:0};
+    days[s.date].net+=t.net; days[s.date].sessions++;
+  });
+  return Object.values(days).sort((a,b)=>a.date.localeCompare(b.date)).map(d=>({...d,pct:d.base?d.net/d.base*100:0}));
+}
+function projectSessionRows(p,real,target){
+  let bal=Number(p.initialBalance)||0;
+  const rows=[];
+  let i=0;
+  while(bal<target && i<500){
+    const x=projectionSession(p,p.activeProfile,bal);
+    if(x.dailyTarget<=0)break;
+    const after=Math.min(target,bal+x.dailyTarget);
+    const actual=state.sessions.filter(s=>s.status==="closed").sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""))[i];
+    const actualNet=actual?sessionSummary(actual.id).net:null;
+    const shownAfter=actual?Math.min(target,bal+actualNet):after;
+    rows.push({n:i+1,before:bal,percent:Number(p.dailyPercent)||30,goal:x.dailyTarget,lot:x.lot,points:x.points,projectedAfter:after,actualNet,actualAfter:shownAfter,status:actual?"CONCLUÍDO":i===state.sessions.filter(s=>s.status==="closed").length?"PRÓXIMA":"PROJETADO"});
+    bal=actual?shownAfter:after;
+    i++;
+    if(bal>=target)break;
+  }
+  return rows;
+}
 function renderProjection(){
-  const p=ensureProjectionState(), real=Number(state.settings.currentBalance)||0, target=Number(p.target)||0;
-  const stage=currentProjectionStage(p,real), stageTarget=stage?stage.to:target;
-  const active=projectionSession(p,p.activeProfile,real);
+  const p=ensureProjectionState();
+  const real=Number(state.settings.currentBalance)||0, initial=Number(p.initialBalance)||0, target=Number(p.target)||0;
+  const stages=milestoneTargets(initial,target,p.secondaryCount);
+  const stage=currentProjectionStage(p,real);
+  const stageTarget=stage?stage.to:target;
   const remaining=projectSessionsToTarget(p,p.activeProfile,real,stageTarget);
-  const closed=state.sessions.filter(s=>s.status==="closed").slice().reverse();
+  const rows=projectSessionRows(p,real,target);
   document.getElementById("view-projection").innerHTML=`
-    <div class="callout"><strong>Projeção & Objetivos</strong><span class="note">O percentual permanece fixo. O valor em US$ muda conforme o novo saldo: saldo × ${num(p.dailyPercent,1)}%.</span></div>
-    <div class="grid grid-4 section-space">
+    <div class="grid grid-4">
       ${cardMetric("Meta principal",money(target),"objetivo final")}
-      ${cardMetric("Saldo atual",money(real),stage?`próxima meta ${money(stageTarget)}`:"meta concluída",real>=target?"positive":"")}
-      ${cardMetric("Busca diária",money(active.dailyTarget),`${num(p.dailyPercent,1)}% do saldo atual`)}
+      ${cardMetric("Saldo inicial do projeto",money(initial),"base de toda a projeção")}
+      ${cardMetric("Saldo atual",money(real),real>=target?"meta concluída":`etapa até ${money(stageTarget)}`)}
       ${cardMetric("Sessões restantes",remaining===null?"—":remaining,`até ${money(stageTarget)}`)}
     </div>
     <div class="card section-space">
-      <div class="card-header"><div><h2>Planilha da etapa atual</h2><p>${money(real)} → ${money(stageTarget)} · ${esc(p.activeProfile)}</p></div></div>
-      <div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Saldo atual</th><th>Busca</th><th>Meta US$</th><th>Saldo projetado</th><th>Status</th></tr></thead><tbody>${renderProjectionRows(p,real,stageTarget,closed)}</tbody></table></div>
-      <p class="note section-space">Exemplo: US$100 → +30% = US$30 → US$130. A próxima linha recalcula 30% sobre US$130 = US$39.</p>
+      <div class="card-header"><div><h2>Metas secundárias</h2><p>Divisões da meta principal desde o valor inicial do projeto.</p></div><span class="pill green">${stages.length} níveis</span></div>
+      ${stages.length?`<div class="table-wrap"><table><thead><tr><th>Nível</th><th>De</th><th>Meta secundária</th><th>Saldo atual</th><th>Status</th></tr></thead><tbody>${stages.map((m,i)=>{const done=real>=m.to,current=real>=m.from&&!done;return `<tr><td>${i+1}</td><td>${money(m.from)}</td><td>${money(m.to)}</td><td>${money(Math.min(real,m.to))}</td><td><span class="pill ${done?'green':current?'amber':''}">${done?'CONCLUÍDA':current?'ATUAL':'PRÓXIMA'}</span></td></tr>`}).join("")}</tbody></table></div>`:`<div class="empty">Defina uma meta principal maior que o saldo inicial.</div>`}
     </div>
     <div class="card section-space">
-      <div class="card-header"><div><h2>Sessões encerradas</h2><p>Cada sessão encerrada alimenta automaticamente esta tabela.</p></div><span class="pill green">${closed.length}</span></div>
-      ${closed.length?`<div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Data</th><th>Operações</th><th>Exposição</th><th>Pontos</th><th>Lucro/Perda</th><th>Saldo após</th><th>Ação</th></tr></thead><tbody>${closed.map((s,i)=>{const t=sessionSummary(s.id);return `<tr><td>${closed.length-i}</td><td>${s.date}</td><td>${t.count}</td><td>${money(t.exposure)}</td><td>${num(t.points,0)}</td><td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td><td>${money(s.balanceAfter??(s.balanceBefore+t.net))}</td><td><button class="btn secondary" data-edit-session="${s.id}">Editar</button></td></tr>`}).join("")}</tbody></table></div>`:`<div class="empty">Nenhuma sessão encerrada.</div>`}
+      <div class="card-header"><div><h2>Projeção operacional até a meta principal</h2><p>Cada linha parte do saldo inicial do projeto e, após um resultado real, passa a usar o saldo realmente alcançado.</p></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Saldo de partida</th><th>Busca %</th><th>Busca US$</th><th>Lote</th><th>Pontos</th><th>Saldo projetado</th><th>Resultado real</th><th>Status</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td>${r.n}</td><td>${money(r.before)}</td><td>${num(r.percent,1)}%</td><td>${money(r.goal)}</td><td>${num(r.lot,2)}</td><td>${num(r.points,0)}</td><td>${money(r.projectedAfter)}</td><td class="${r.actualNet===null?'':r.actualNet>=0?'positive':'negative'}">${r.actualNet===null?"—":money(r.actualNet)}</td><td><span class="pill ${r.status==="CONCLUÍDO"?'green':r.status==="PRÓXIMA"?'amber':''}">${r.status}</span></td></tr>`).join("")}
+      </tbody></table></div>
     </div>
-    <div class="card section-space"><div class="card-header"><div><h2>Configuração</h2><p>Objetivo e percentual permanecem editáveis.</p></div></div>
-      <form id="projection-form" class="form-grid three">
-        <div class="field full"><label>Nome do projeto</label><input name="name" value="${esc(p.name)}"></div>
-        <div class="field"><label>Saldo inicial</label><input name="initial" type="number" step="0.01" value="${p.initialBalance}"></div>
-        <div class="field"><label>Meta principal</label><input name="target" type="number" step="0.01" value="${p.target}"></div>
-        <div class="field"><label>Busca diária (%)</label><input name="dailyPercent" type="number" step="0.1" value="${p.dailyPercent}"></div>
-        <div class="field"><label>Perfil</label><select name="profile">${Object.keys(state.profiles).map(x=>`<option ${x===p.activeProfile?'selected':''}>${x}</option>`).join("")}</select></div>
-        <div class="field"><label>Ativo</label><select name="asset">${Object.values(state.assets).map(a=>`<option ${a.symbol===p.asset?'selected':''}>${a.symbol}</option>`).join("")}</select></div>
-        <div class="actions full"><button class="btn primary">Salvar</button></div>
-      </form>
-    </div>`;
-  document.getElementById("projection-form").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);state.projection={...p,name:f.get("name")||"Projeto principal",initialBalance:Number(f.get("initial"))||0,target:Number(f.get("target"))||0,dailyPercent:Number(f.get("dailyPercent"))||30,activeProfile:f.get("profile"),asset:f.get("asset")};save();toast("Projeção atualizada.");render();};
+    <div class="callout section-space"><strong>Edição administrativa</strong><span class="note">Meta principal, saldo inicial, percentual e divisões do projeto são editados em Configurações → Projeto.</span></div>`;
 }
+
 function renderProjectionRows(p,real,target,closed){
   if(real>=target)return `<tr><td>—</td><td>${money(real)}</td><td>—</td><td>—</td><td>${money(real)}</td><td><span class="pill green">META CONCLUÍDA</span></td></tr>`;
   let bal=real, html="";
@@ -410,19 +491,25 @@ function renderProjectionMilestones(p,real){
 }
 
 function renderJournal(){
-  const sessions=state.sessions;
+  const notes=Array.isArray(state.journalEntries)?state.journalEntries:[];
+  const sessions=state.sessions.filter(s=>s.status==="closed");
   document.getElementById("view-journal").innerHTML=`
-    <div class="card"><div class="card-header"><div><h2>Diário operacional</h2><p>Contexto → estratégia → execução → gestão → resultado → aprendizado.</p></div></div>
-      ${sessions.length?sessions.map(s=>`<article class="card flat" style="border:1px solid var(--line);margin-bottom:10px"><div class="card-header"><div><h3>${s.date} · ${esc(s.asset)} · ${esc(s.strategy||"Sem setup")}</h3><p>${s.startTime}${s.endTime?` → ${s.endTime}`:""} · ${esc(s.profile)}</p></div><span class="pill ${s.status==="open"?"amber":"green"}">${s.status}</span></div><div class="grid grid-2"><div><div class="kicker">Contexto</div><p class="note">${esc(s.context||"Não preenchido")}</p></div><div><div class="kicker">Aprendizado</div><p class="note">${esc(s.journal||"Não preenchido")}</p></div></div><div class="actions"><button class="btn secondary" data-edit-journal="${s.id}">Editar diário</button></div></article>`).join(""):`<div class="empty">Abra uma sessão para começar o diário operacional.</div>`}
-    </div>`;
-  document.querySelectorAll("[data-edit-journal]").forEach(b=>b.onclick=()=>{
-    const s=state.sessions.find(x=>x.id===b.dataset.editJournal); if(!s)return;
-    const context=prompt("Contexto da sessão:",s.context||""); if(context===null)return;
-    const journal=prompt("Aprendizado / revisão da sessão:",s.journal||""); if(journal===null)return;
-    s.context=context;s.journal=journal;save();toast("Diário atualizado.");render();
-  });
+    <div class="grid grid-2">
+      <div class="card"><div class="card-header"><div><h2>Diário operacional</h2><p>Registro livre e opcional de situações ocorridas em qualquer dia.</p></div></div>
+        <form id="journal-free-form" class="form-grid">
+          <div class="field"><label>Data</label><input type="date" name="date" value="${todayStr()}"></div>
+          <div class="field full"><label>Registro livre</label><textarea name="text" placeholder="Ex.: contexto do mercado, decisão tomada, oportunidade perdida, erro, aprendizado..."></textarea></div>
+          <div class="actions full"><button class="btn primary">Salvar registro</button></div>
+        </form>
+      </div>
+      <div class="card"><div class="card-header"><div><h2>Registros do diário</h2><p>Independentes das sessões.</p></div></div>
+        ${notes.length?notes.map(n=>`<article class="card flat" style="border:1px solid var(--line);margin-bottom:10px"><div class="card-header"><strong>${n.date}</strong><button class="btn secondary" data-edit-note="${n.id}">Editar</button></div><p class="note">${esc(n.text)}</p></article>`).join(""):`<div class="empty">Nenhum registro.</div>`}
+      </div>
+    </div>
+    <div class="card section-space"><div class="card-header"><div><h2>Resumo das sessões encerradas</h2><p>Consulta rápida do resultado operacional.</p></div></div>${sessions.length?renderSessionsTable():`<div class="empty">Nenhuma sessão encerrada.</div>`}</div>`;
+  const f=document.getElementById("journal-free-form");
+  if(f)f.onsubmit=e=>{e.preventDefault();const d=new FormData(f),txt=(d.get("text")||"").trim();if(!txt)return;state.journalEntries=notes;state.journalEntries.unshift({id:uid(),date:d.get("date"),text:txt});save();toast("Registro salvo.");render();};
 }
-
 function renderPerformance(){
   const o=overall(), s=sessionTotals();
   const initial=Number(state.settings.initialBalance)||0;
@@ -505,6 +592,7 @@ function renderSettings(){
 
   const tabs=[
     ["geral","Gerenciamento"],
+    ["projeto","Projeto"],
     ["lotes","Perfis de lote"],
     ["capital","Depósitos e saques"],
     ["ativos","Ativos"]
@@ -546,6 +634,7 @@ function renderSettingsTab(tab){
             <div class="field"><label>Perfil padrão</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===state.settings.defaultProfile?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
             <div class="field"><label>Ativo padrão</label><select name="asset">${Object.keys(state.assets).map(x=>`<option ${x===state.settings.defaultAsset?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
             <div class="actions full"><button class="btn primary">Salvar gerenciamento</button></div>
+          <div class="actions full"><button type="button" class="btn secondary" id="new-project">Novo projeto</button><button type="button" class="btn danger" id="delete-project">Excluir projeto atual</button></div>
           </form>
         </div>
         <div class="card">
@@ -561,6 +650,60 @@ function renderSettingsTab(tab){
       </div>`;
   }
 
+  if(tab==="projeto"){
+    const p=ensureProjectionState();
+    return `
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-header"><div><h2>Projeto atual</h2><p>Todos os dados de metas usados pela Projeção & Objetivos.</p></div><span class="pill green">${esc(p.status||"active")}</span></div>
+          <form id="settings-project-form" class="form-grid">
+            <div class="field full"><label>Nome do projeto</label><input name="name" value="${esc(p.name)}"></div>
+            <div class="field"><label>Saldo inicial do projeto (US$)</label><input name="initial" type="number" step="0.01" value="${p.initialBalance}"></div>
+            <div class="field"><label>Meta principal (US$)</label><input name="target" type="number" step="0.01" value="${p.target}"></div>
+            <div class="field"><label>Busca projetada (%)</label><input name="dailyPercent" type="number" step="0.1" value="${p.dailyPercent}"></div>
+            <div class="field"><label>Metas secundárias</label><input name="secondaryCount" type="number" min="1" max="50" value="${p.secondaryCount}"></div>
+            <div class="field"><label>Perfil do projeto</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===p.activeProfile?'selected':''}>${esc(x)}</option>`).join("")}</select></div>
+            <div class="field"><label>Ativo principal</label><select name="asset">${Object.values(state.assets).map(a=>`<option ${a.symbol===p.asset?'selected':''}>${esc(a.symbol)}</option>`).join("")}</select></div>
+            <div class="actions full"><button class="btn primary">Salvar projeto</button></div>
+          </form>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><h2>Ciclo do projeto</h2><p>Controle administrativo do projeto atual.</p></div></div>
+          <div class="stat-strip">
+            <div><span class="kicker">Inicial</span><div class="v">${money(p.initialBalance)}</div></div>
+            <div><span class="kicker">Meta principal</span><div class="v">${money(p.target)}</div></div>
+            <div><span class="kicker">Saldo atual</span><div class="v">${money(state.settings.currentBalance)}</div></div>
+            <div><span class="kicker">Sessões encerradas</span><div class="v">${state.sessions.filter(s=>s.status==="closed").length}</div></div>
+          </div>
+          <div class="callout section-space"><strong>Novo projeto</strong><span class="note">Cria um novo ciclo de acompanhamento. O projeto anterior deve ser exportado antes, se quiser manter um backup externo.</span></div>
+          <div class="actions"><button class="btn primary" id="new-project-project">Criar novo projeto</button><button class="btn danger" id="delete-project-project">Excluir projeto atual</button></div>
+        </div>
+      </div>`;
+  }
+
+  if(tab==="projeto"){
+    const f=document.getElementById("settings-project-form");
+    if(f)f.onsubmit=e=>{
+      e.preventDefault();const d=new FormData(f),p=ensureProjectionState();
+      state.projection={...p,name:d.get("name")||"Projeto principal",initialBalance:Number(d.get("initial"))||0,target:Number(d.get("target"))||0,dailyPercent:Number(d.get("dailyPercent"))||30,secondaryCount:Math.max(1,Math.min(50,Number(d.get("secondaryCount"))||5)),activeProfile:d.get("profile"),asset:d.get("asset")};
+      save();toast("Projeto atualizado.");render();
+    };
+    const np=document.getElementById("new-project-project");
+    if(np)np.onclick=()=>{
+      if(!confirm("Criar um novo projeto? Os registros atuais serão substituídos. Exporte um backup antes se necessário."))return;
+      const initial=Number(prompt("Saldo inicial do novo projeto (US$):","60"))||60;
+      const target=Number(prompt("Meta principal do novo projeto (US$):","1000"))||1000;
+      state.projection={name:"Novo projeto",initialBalance:initial,target,dailyPercent:Number(state.settings.minDailySearchPercent??20),secondaryCount:5,activeProfile:state.settings.defaultProfile,asset:state.settings.defaultAsset,mode:"compound",status:"active",startedAt:todayStr(),completedAt:""};
+      state.sessions=[];state.operations=[];state.journalEntries=[];state.activeSessionId=null;state.capitalMovements=[];
+      state.settings.currentBalance=initial;state.settings.operationalBaseBalance=initial;
+      save();toast("Novo projeto criado.");render();
+    };
+    const dp=document.getElementById("delete-project-project");
+    if(dp)dp.onclick=()=>{
+      if(!confirm("Excluir definitivamente o projeto atual e seus registros locais?"))return;
+      state=structuredClone(defaultState);normalizeLotRules();save();toast("Projeto excluído.");render();
+    };
+  }
   if(tab==="lotes"){
     const profile=state.settings.activeLotProfile||"Moderado 1";
     const rules=state.settings.lotRules[profile]||[];
@@ -621,6 +764,21 @@ function bindSettingsTab(tab){
       state.settings.defaultAsset=d.get("asset");
       save();toast("Gerenciamento atualizado.");render();
     };
+    const np=document.getElementById("new-project");
+    if(np)np.onclick=()=>{
+      if(!confirm("Criar um novo projeto? O projeto atual será substituído por uma nova estrutura sem apagar o backup/exportação existente."))return;
+      const initial=Number(prompt("Saldo inicial do novo projeto (US$):","60"))||60;
+      const target=Number(prompt("Meta principal do novo projeto (US$):","1000"))||1000;
+      state.projection={name:"Novo projeto",initialBalance:initial,target,dailyPercent:Number(state.settings.minDailySearchPercent??20),secondaryCount:5,activeProfile:state.settings.defaultProfile,asset:state.settings.defaultAsset,mode:"compound",status:"active",startedAt:todayStr(),completedAt:""};
+      state.sessions=[];state.operations=[];state.journalEntries=[];state.activeSessionId=null;state.capitalMovements=[];
+      state.settings.currentBalance=initial;state.settings.operationalBaseBalance=initial;
+      save();toast("Novo projeto criado.");render();
+    };
+    const dp=document.getElementById("delete-project");
+    if(dp)dp.onclick=()=>{
+      if(!confirm("Excluir definitivamente o projeto atual e seus registros locais?"))return;
+      state=structuredClone(defaultState);normalizeLotRules();save();toast("Projeto excluído.");render();
+    };
   }
   if(tab==="lotes"){
     const sel=document.getElementById("lot-profile-select");
@@ -660,43 +818,68 @@ function bindSettingsTab(tab){
 }
 
 document.addEventListener("click",e=>{
+  const detail=e.target.closest("[data-session-detail]");
+  if(detail){
+    const panel=document.getElementById("session-detail-panel");
+    if(panel)panel.innerHTML=renderSessionDetail(detail.dataset.sessionDetail);
+    return;
+  }
+
   const close=e.target.closest("[data-close-session]");
   if(close){
     const sess=state.sessions.find(x=>x.id===close.dataset.closeSession); if(!sess)return;
     if(sess.status==="open"){
       const t=sessionSummary(sess.id);
-      sess.status="closed"; sess.endTime=new Date().toTimeString().slice(0,5); sess.balanceAfter=Number(state.settings.currentBalance)||0;
+      sess.status="closed"; sess.endTime=new Date().toTimeString().slice(0,5);
+      sess.balanceAfter=Number(state.settings.currentBalance)||0;
       sess.summary={count:t.count,exposure:t.exposure,points:t.points,net:t.net,gross:t.gross,commission:t.commission,wins:t.wins,losses:t.losses};
-      sess.projection={balanceBefore:sess.balanceBefore,plannedPercent:Number(state.projection?.dailyPercent)||30,plannedMoney:projectionSession(ensureProjectionState(),sess.profile,sess.balanceBefore).dailyTarget,plannedLot:projectionSession(ensureProjectionState(),sess.profile,sess.balanceBefore).lot,plannedPoints:projectionSession(ensureProjectionState(),sess.profile,sess.balanceBefore).points,realNet:t.net,balanceAfter:sess.balanceAfter};
+      const px=projectionSession(ensureProjectionState(),sess.profile,sess.balanceBefore);
+      sess.projection={balanceBefore:sess.balanceBefore,plannedPercent:sess.searchPercent,plannedMoney:px.dailyTarget,plannedLot:px.lot,plannedPoints:px.points,realNet:t.net,balanceAfter:sess.balanceAfter};
       if(state.activeSessionId===sess.id)state.activeSessionId=null;
-      save();toast("Sessão encerrada e enviada para a Projeção.");render();
+      save();toast("Sessão encerrada e enviada ao histórico.");render();
     }
+    return;
   }
+
   const editS=e.target.closest("[data-edit-session]");
   if(editS){
     const sess=state.sessions.find(x=>x.id===editS.dataset.editSession); if(!sess)return;
-    const strategy=prompt("Estratégia / setup:",sess.strategy||""); if(strategy===null)return;
-    const context=prompt("Contexto:",sess.context||""); if(context===null)return;
-    const journal=prompt("Diário / aprendizado:",sess.journal||""); if(journal===null)return;
-    const target=prompt("Objetivo em pontos:",String(sess.targetPoints||0)); if(target===null)return;
-    sess.strategy=strategy;sess.context=context;sess.journal=journal;sess.targetPoints=Number(target)||0;
-    save();toast("Sessão editada.");render();
+    const options=["Data","Hora de início","Ativo","Perfil de gerenciamento","% de busca do dia","Pontos de objetivo Take","Pontos de Stop","Estratégia/Setup/Contexto"];
+    const choice=prompt("O que deseja editar?\n\n"+options.map((x,i)=>`${i+1}. ${x}`).join("\n"),"1");
+    const i=Number(choice)-1;if(i<0||i>=options.length)return;
+    const fields=["date","startTime","asset","profile","searchPercent","targetPoints","stopPoints","context"];
+    const field=fields[i];
+    const labels=["Data","Hora de início","Ativo","Perfil de gerenciamento","% de busca do dia","Pontos de objetivo Take","Pontos de Stop","Estratégia / Setup / Contexto"];
+    const value=prompt(labels[i]+":",String(sess[field]??"")); if(value===null)return;
+    if(field==="searchPercent"||field==="targetPoints"||field==="stopPoints")sess[field]=Number(value)||0;else sess[field]=value;
+    save();toast("Sessão atualizada.");render();
+    return;
   }
+
   const editO=e.target.closest("[data-edit-op]");
   if(editO){
     const o=state.operations.find(x=>x.id===editO.dataset.editOp); if(!o)return;
-    const net=prompt("Resultado líquido MT5 (US$):",String(o.net)); if(net===null)return;
-    const points=prompt("Pontos Nexora:",String(o.points)); if(points===null)return;
-    const lot=prompt("Lote:",String(o.lot)); if(lot===null)return;
-    const note=prompt("Observação:",o.note||""); if(note===null)return;
-    o.net=Number(net)||0;o.points=Number(points)||0;o.lot=Number(lot)||0;o.note=note;
-    const aa=state.assets[o.asset]||asset();o.gross=pointsToMoney(o.points,o.lot,aa);o.executionCost=o.gross-o.net;
+    const choices=["Data","Horário","Ativo","Direção","Lote","Pontos","Resultado líquido MT5","Comissão","Entrada","Saída","Observação"];
+    const choice=prompt("O que deseja editar?\n\n"+choices.map((x,i)=>`${i+1}. ${x}`).join("\n"),"1");
+    const i=Number(choice)-1;if(i<0||i>=choices.length)return;
+    const fields=["date","time","asset","direction","lot","points","net","commission","entry","exit","note"];
+    const field=fields[i];
+    const value=prompt(choices[i]+":",String(o[field]??""));if(value===null)return;
+    if(["direction","lot","points","net","commission","entry","exit"].includes(field))o[field]=Number(value)||0;else o[field]=value;
+    const aa=state.assets[o.asset]||asset();
+    o.gross=pointsToMoney(Number(o.points)||0,Number(o.lot)||0,aa);o.executionCost=o.gross-(Number(o.net)||0);
     rebuildCurrentBalance();
     state.sessions.forEach(ss=>{const t=sessionSummary(ss.id);if(ss.status==="closed"){ss.summary={count:t.count,exposure:t.exposure,points:t.points,net:t.net,gross:t.gross,commission:t.commission,wins:t.wins,losses:t.losses};ss.balanceAfter=Number((ss.balanceBefore+t.net).toFixed(2));}});
-    save();toast("Operação editada e saldo recalculado.");render();
+    save();toast("Operação atualizada.");render();
+    return;
+  }
+
+  const editNote=e.target.closest("[data-edit-note]");
+  if(editNote){
+    const n=(state.journalEntries||[]).find(x=>x.id===editNote.dataset.editNote);if(!n)return;
+    const txt=prompt("Editar registro:",n.text);if(txt===null)return;n.text=txt;save();toast("Diário atualizado.");render();
   }
 });
-
 document.getElementById("export-btn").onclick=()=>{
   const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`nexora-backup-${todayStr()}.json`;a.click();URL.revokeObjectURL(a.href);
@@ -713,6 +896,7 @@ document.getElementById("import-file").onchange=e=>{
 state.activeSessionId=state.activeSessionId||null;
 state.sessions=Array.isArray(state.sessions)?state.sessions:[];
 state.operations=Array.isArray(state.operations)?state.operations:[];
+state.journalEntries=Array.isArray(state.journalEntries)?state.journalEntries:[];
 if(!state.projection)state.projection={name:'Projeto principal',initialBalance:60,target:1000,dailyPercent:30,activeProfile:'Moderado',asset:'XAUUSD'};
 if(!state.projection.dailyPercent)state.projection.dailyPercent=30;
 if(state.settings.minDailySearchPercent===undefined)state.settings.minDailySearchPercent=20;
@@ -721,73 +905,82 @@ normalizeLotRules();
 rebuildCurrentBalance();save();
 nav(); render();function renderSessionsTable(){
   if(!state.sessions.length)return `<div class="empty">Nenhuma sessão registrada.</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Horário</th><th>Ativo</th><th>Perfil</th><th>Ops</th><th>Exposição</th><th>Resultado</th><th>Status</th><th>Ação</th></tr></thead><tbody>${state.sessions.slice(0,50).map(s=>{const t=sessionSummary(s.id);return `<tr><td>${s.date}</td><td>${s.startTime}${s.endTime?` → ${s.endTime}`:""}</td><td>${esc(s.asset)}</td><td>${esc(s.profile)}</td><td>${t.count}</td><td>${money(t.exposure)}</td><td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td><td><span class="pill ${s.status==="open"?"amber":"green"}">${s.status==="open"?"Aberta":"Fechada"}</span></td><td><button class="btn secondary" data-edit-session="${s.id}">Editar</button>${s.status==="open"?` <button class="btn danger" data-close-session="${s.id}">Encerrar</button>`:""}</td></tr>`}).join("")}</tbody></table></div>`;
+  const ordered=[...state.sessions].sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
+  return `<div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Data</th><th>Horário</th><th>Ativo</th><th>Ops</th><th>Resultado</th><th>%</th><th>Status</th><th>Ação</th></tr></thead><tbody>${ordered.slice(0,100).map(s=>{const t=sessionSummary(s.id),n=operationalSessionNumber(s.date,s.id);return `<tr><td>${n}</td><td>${s.date}</td><td>${s.startTime}${s.endTime?` → ${s.endTime}`:""}</td><td>${esc(s.asset)}</td><td>${t.count}</td><td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td><td class="${sessionPercent(s)>=0?'positive':'negative'}">${pct(sessionPercent(s))}</td><td><span class="pill ${s.status==="open"?"amber":"green"}">${s.status==="open"?"Aberta":"Encerrada"}</span></td><td>${s.status==="closed"?`<button class="btn secondary" data-session-detail="${s.id}">Selecionar</button> <button class="btn secondary" data-edit-session="${s.id}">Editar</button>`:`<button class="btn danger" data-close-session="${s.id}">Encerrar</button>`}</td></tr>`}).join("")}</tbody></table></div>`;
 }
+
 function renderOperations(){
+  const open=state.activeSessionId?state.sessions.find(s=>s.id===state.activeSessionId&&s.status==="open"):null;
   const a=asset();
-  const openSessions=state.sessions.filter(s=>s.status==="open");
+  const disabled=!open;
+  const last=state.operations[0];
   document.getElementById("view-operations").innerHTML=`
-    <div class="grid grid-2">
+    <div class="callout ${disabled?'':'green'}"><strong>${disabled?"Nenhuma sessão operacional aberta.":"Sessão ativa: "+operationalSessionNumber(open.date,open.id)+" · "+open.date}</strong><span class="note">${disabled?"Abra uma sessão operacional antes de registrar qualquer operação.":"Todos os lançamentos serão vinculados automaticamente à sessão ativa."}</span></div>
+    <div class="grid grid-2 section-space">
       <div class="card">
         <div class="card-header"><div><h2>Lançamento detalhado</h2><p>Entrada + saída + resultado líquido do MT5.</p></div></div>
         <form id="op-detailed" class="form-grid">
-          <div class="field"><label>Sessão</label><select name="sessionId" required>${openSessions.map(s=>`<option value="${s.id}" ${s.id===state.activeSessionId?'selected':''}>${s.date} · ${esc(s.strategy||'Sessão')}</option>`).join('')}</select></div>
-          <div class="field"><label>Data</label><input type="date" name="date" value="${todayStr()}" required></div>
-          <div class="field"><label>Horário</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" required></div>
-          <div class="field"><label>Ativo</label><select name="asset">${Object.values(state.assets).map(x=>`<option ${x.symbol===state.settings.defaultAsset?'selected':''}>${x.symbol}</option>`).join('')}</select></div>
-          <div class="field"><label>Direção</label><select name="direction"><option value="1">BUY</option><option value="-1">SELL</option></select></div>
-          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(calcLot(state.settings.currentBalance,state.settings.defaultProfile),2)}" required></div>
-          <div class="field"><label>Entrada</label><input type="number" step="0.01" name="entry" required></div>
-          <div class="field"><label>Saída</label><input type="number" step="0.01" name="exit" required></div>
-          <div class="field"><label>Resultado líquido MT5 (US$)</label><input type="number" step="0.01" name="net" required></div>
-          <div class="field"><label>Comissão MT5 (US$)</label><input type="number" step="0.01" name="commission" value="${commission(calcLot(state.settings.currentBalance,state.settings.defaultProfile),a).toFixed(2)}"></div>
-          <div class="field"><label>Estratégia</label><input name="strategy"></div>
-          <div class="field full"><label>Observação</label><textarea name="note"></textarea></div>
-          <div class="actions full"><button class="btn primary" ${openSessions.length?'':'disabled'}>Registrar operação</button></div>
+          <div class="field"><label>Data</label><input type="date" name="date" value="${open?.date||todayStr()}" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Horário</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Ativo</label><select name="asset" ${disabled?"disabled":""}>${Object.values(state.assets).map(x=>`<option ${x.symbol===(open?.asset||state.settings.defaultAsset)?"selected":""}>${x.symbol}</option>`).join("")}</select></div>
+          <div class="field"><label>Direção</label><select name="direction" ${disabled?"disabled":""}><option value="1">BUY</option><option value="-1">SELL</option></select></div>
+          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,2)}" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Entrada</label><input type="number" step="0.01" name="entry" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Saída</label><input type="number" step="0.01" name="exit" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Resultado líquido MT5 (US$)</label><input type="number" step="0.01" name="net" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Comissão MT5 (US$)</label><input type="number" step="0.01" name="commission" value="${commission(lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,a).toFixed(2)}" ${disabled?"disabled":""}></div>
+          <div class="field full"><label>Observação</label><textarea name="note" ${disabled?"disabled":""}></textarea></div>
+          <div class="actions full"><button class="btn primary" ${disabled?"disabled":""}>Registrar operação</button></div>
         </form>
       </div>
       <div class="card">
         <div class="card-header"><div><h2>Lançamento rápido</h2><p>Quando você já tem os dados finais do MT5.</p></div></div>
         <form id="op-quick" class="form-grid">
-          <div class="field"><label>Sessão</label><select name="sessionId" required>${openSessions.map(s=>`<option value="${s.id}" ${s.id===state.activeSessionId?'selected':''}>${s.date} · ${esc(s.strategy||'Sessão')}</option>`).join('')}</select></div>
-          <div class="field"><label>Data</label><input type="date" name="date" value="${todayStr()}" required></div>
-          <div class="field"><label>Horário</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" required></div>
-          <div class="field"><label>Ativo</label><select name="asset">${Object.values(state.assets).map(x=>`<option ${x.symbol===state.settings.defaultAsset?'selected':''}>${x.symbol}</option>`).join('')}</select></div>
-          <div class="field"><label>Direção</label><select name="direction"><option value="1">BUY</option><option value="-1">SELL</option></select></div>
-          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(calcLot(state.settings.currentBalance,state.settings.defaultProfile),2)}"></div>
-          <div class="field"><label>Pontos Nexora</label><input type="number" step="1" name="points" required></div>
-          <div class="field"><label>Resultado líquido MT5 (US$)</label><input type="number" step="0.01" name="net" required></div>
-          <div class="field"><label>Comissão (US$)</label><input type="number" step="0.01" name="commission"></div>
-          <div class="field full"><label>Observação</label><textarea name="note"></textarea></div>
-          <div class="actions full"><button class="btn primary" ${openSessions.length?'':'disabled'}>Registrar lançamento rápido</button></div>
+          <div class="field"><label>Data</label><input type="date" name="date" value="${open?.date||todayStr()}" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Horário</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Ativo</label><select name="asset" ${disabled?"disabled":""}>${Object.values(state.assets).map(x=>`<option ${x.symbol===(open?.asset||state.settings.defaultAsset)?"selected":""}>${x.symbol}</option>`).join("")}</select></div>
+          <div class="field"><label>Direção</label><select name="direction" ${disabled?"disabled":""}><option value="1">BUY</option><option value="-1">SELL</option></select></div>
+          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,2)}" ${disabled?"disabled":""}></div>
+          <div class="field"><label>Pontos Nexora</label><input type="number" step="1" name="points" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Resultado líquido MT5 (US$)</label><input type="number" step="0.01" name="net" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Comissão (US$)</label><input type="number" step="0.01" name="commission" ${disabled?"disabled":""}></div>
+          <div class="field full"><label>Observação</label><textarea name="note" ${disabled?"disabled":""}></textarea></div>
+          <div class="actions full"><button class="btn primary" ${disabled?"disabled":""}>Registrar lançamento rápido</button></div>
         </form>
       </div>
     </div>
-    <div class="card section-space"><div class="card-header"><div><h2>Histórico</h2><p>Cada operação pertence a uma sessão e pode ser editada.</p></div></div>${renderOpsTable()}</div>`;
-
+    <div class="card section-space">
+      <div class="card-header"><div><h2>Última operação registrada</h2><p>Resumo rápido da última execução.</p></div></div>
+      ${last?renderLastOperation(last):`<div class="empty">Nenhuma operação registrada.</div>`}
+    </div>`;
   const detailed=document.getElementById("op-detailed");
   if(detailed) detailed.onsubmit=e=>{
-    e.preventDefault(); const f=new FormData(e.target), aa=state.assets[f.get('asset')];
-    const points=pointsFromPrices(f.get('entry'),f.get('exit'),Number(f.get('direction')),aa);
-    const lot=Number(f.get('lot')), net=Number(f.get('net')), comm=Number(f.get('commission'))||0, gross=pointsToMoney(points,lot,aa);
-    addOperation({date:f.get('date'),time:f.get('time'),sessionId:f.get('sessionId'),asset:f.get('asset'),direction:Number(f.get('direction')),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:Number(f.get('entry')),exit:Number(f.get('exit')),strategy:f.get('strategy'),note:f.get('note'),mode:'detailed'});
+    e.preventDefault();const f=new FormData(e.target),aa=state.assets[f.get("asset")],points=pointsFromPrices(f.get("entry"),f.get("exit"),Number(f.get("direction")),aa),lot=Number(f.get("lot")),net=Number(f.get("net")),comm=Number(f.get("commission"))||0,gross=pointsToMoney(points,lot,aa);
+    addOperation({date:f.get("date"),time:f.get("time"),sessionId:open.id,asset:f.get("asset"),direction:Number(f.get("direction")),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:Number(f.get("entry")),exit:Number(f.get("exit")),strategy:open.context||"",note:f.get("note"),mode:"detailed"});
   };
   const quick=document.getElementById("op-quick");
   if(quick) quick.onsubmit=e=>{
-    e.preventDefault(); const f=new FormData(e.target), lot=Number(f.get('lot')), aa=state.assets[f.get('asset')], points=Number(f.get('points')), net=Number(f.get('net')), comm=Number(f.get('commission'))||0, gross=pointsToMoney(points,lot,aa);
-    addOperation({date:f.get('date'),time:f.get('time'),sessionId:f.get('sessionId'),asset:f.get('asset'),direction:Number(f.get('direction')),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:null,exit:null,strategy:'',note:f.get('note'),mode:'quick'});
+    e.preventDefault();const f=new FormData(e.target),lot=Number(f.get("lot")),aa=state.assets[f.get("asset")],points=Number(f.get("points")),net=Number(f.get("net")),comm=Number(f.get("commission"))||0,gross=pointsToMoney(points,lot,aa);
+    addOperation({date:f.get("date"),time:f.get("time"),sessionId:open.id,asset:f.get("asset"),direction:Number(f.get("direction")),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:null,exit:null,strategy:open.context||"",note:f.get("note"),mode:"quick"});
   };
+}
+function renderLastOperation(o){
+  const s=state.sessions.find(x=>x.id===o.sessionId), bal=Number(o.balanceBeforeOperation)||0;
+  const pctAdd=bal?Number(o.net)/bal*100:0;
+  return `<div class="table-wrap"><table><thead><tr><th>Data da operação</th><th>Nº Sessão</th><th>Ativo</th><th>Direção</th><th>Lote</th><th>Pontos</th><th>Lucro/Perda</th><th>% saldo</th></tr></thead><tbody><tr><td>${o.date} ${o.time||""}</td><td>${s?operationalSessionNumber(s.date,s.id):"—"}</td><td>${esc(o.asset)}</td><td>${o.direction===1?"BUY":"SELL"}</td><td>${num(o.lot,2)}</td><td>${num(o.points,0)}</td><td class="${o.net>=0?'positive':'negative'}">${money(o.net)}</td><td class="${pctAdd>=0?'positive':'negative'}">${pct(pctAdd)}</td></tr></tbody></table></div>`;
 }
 function addOperation(o){
   if(!o.sessionId){toast('Abra uma sessão antes de registrar a operação.');return;}
   if(!state.activeSessionId) state.activeSessionId=o.sessionId;
+  o.balanceBeforeOperation=Number(state.settings.currentBalance)||0;
   state.operations.unshift({id:uid(),timestamp:new Date().toISOString(),...o});
   rebuildCurrentBalance(); save(); toast('Operação registrada na sessão e saldo atualizado.'); render();
 }
 function renderOpsTable(){
   if(!state.operations.length)return `<div class="empty">Nenhuma operação registrada.</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Sessão</th><th>Ativo</th><th>Dir.</th><th>Lote</th><th>Pontos</th><th>Líquido MT5</th><th>Ação</th></tr></thead><tbody>${state.operations.slice(0,100).map(o=>{const s=state.sessions.find(x=>x.id===o.sessionId);return `<tr><td>${o.date} ${o.time||""}</td><td>${s?s.date:"—"}</td><td>${esc(o.asset)}</td><td>${o.direction===1?"BUY":"SELL"}</td><td>${num(o.lot,2)}</td><td>${num(o.points,0)}</td><td class="${o.net>=0?'positive':'negative'}">${money(o.net)}</td><td><button class="btn secondary" data-edit-op="${o.id}">Editar</button></td></tr>`}).join("")}</tbody></table></div><p class="note">As operações são vinculadas à sessão e podem ser editadas depois.</p>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Sessão</th><th>Ativo</th><th>Dir.</th><th>Lote</th><th>Pontos</th><th>Líquido MT5</th></tr></thead><tbody>${state.operations.slice(0,100).map(o=>{const s=state.sessions.find(x=>x.id===o.sessionId);return `<tr><td>${o.date} ${o.time||""}</td><td>${s?operationalSessionNumber(s.date,s.id):"—"}</td><td>${esc(o.asset)}</td><td>${o.direction===1?"BUY":"SELL"}</td><td>${num(o.lot,2)}</td><td>${num(o.points,0)}</td><td class="${o.net>=0?'positive':'negative'}">${money(o.net)}</td></tr>`}).join("")}</tbody></table></div><p class="note">A edição das operações é feita exclusivamente em Sessão operacional.</p>`;
 }
+
 
 function renderCalculator(){
   document.getElementById("view-calculator").innerHTML=`
