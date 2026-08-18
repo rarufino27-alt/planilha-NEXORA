@@ -8,8 +8,15 @@ const defaultState = {
     dailyStopPoints: 500,
     dailyTargetPoints: 500,
     defaultAsset: "XAUUSD",
-    defaultProfile: "Moderado",
-    roundDownLots: true
+    defaultProfile: "Moderado 1",
+    roundDownLots: true,
+    lotMinimum: 0.01,
+    lotRules: {
+      "Conservador": [],
+      "Moderado": [],
+      "Moderado 1": [],
+      "Agressivo": []
+    }
   },
   assets: {
     XAUUSD: {
@@ -51,6 +58,35 @@ const defaultState = {
 };
 
 let state = loadState();
+
+function buildDefaultLotRules(){
+  const profiles=["Conservador","Moderado","Moderado 1","Agressivo"];
+  const rows={};
+  profiles.forEach(profile=>{
+    rows[profile]=[];
+    for(let balance=100,i=0; balance<=5000; balance+=25,i++){
+      let lot=0.01;
+      if(profile==="Conservador") lot=0.01+i*0.01;
+      if(profile==="Moderado") lot=0.03+i*0.01;
+      if(profile==="Moderado 1") lot=0.05+i*0.01;
+      if(profile==="Agressivo") lot=0.12 + Math.floor(i/2)*0.05 + (i%2)*0.03;
+      rows[profile].push({balance,lot:Number(lot.toFixed(2))});
+    }
+  });
+  return rows;
+}
+function normalizeLotRules(){
+  const defaults=buildDefaultLotRules();
+  state.settings.lotMinimum=Number(state.settings.lotMinimum)||0.01;
+  if(!state.settings.lotRules) state.settings.lotRules={};
+  Object.keys(defaults).forEach(profile=>{
+    if(!Array.isArray(state.settings.lotRules[profile]) || !state.settings.lotRules[profile].length){
+      state.settings.lotRules[profile]=defaults[profile];
+    }
+  });
+}
+normalizeLotRules();
+
 let currentView = "dashboard";
 
 const money = (n) => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(Number(n)||0);
@@ -82,20 +118,29 @@ function toast(msg){
 function asset(){ return state.assets[state.settings.defaultAsset] || state.assets.XAUUSD; }
 
 function calcLot(balance, profile){
-  const b=Math.max(0,Number(balance)||0), a=asset();
-  let raw;
-  if(profile==="Moderado"){
-    // Escala definida: cada US$50 acrescenta 0,025 de lote bruto,
-    // arredondado sempre para baixo no step de 0,01.
-    // 100=0,05 | 150=0,07 | 200=0,10 | 250=0,12 | 300=0,15
-    raw=Math.floor((b/50)+1e-12)*0.025;
-  }else{
-    const per100=state.profiles[profile] ?? 0.05;
-    raw=(b/100)*per100;
+  const b=Number(balance)||0;
+  const a=asset();
+  normalizeLotRules();
+
+  const rules=state.settings.lotRules[profile]||[];
+  if(b<100) return 0; // abaixo do primeiro nível: sem sugestão automática
+
+  let selected=null;
+  for(const row of rules){
+    if(Number(row.balance)<=b) selected=row;
+    else break;
   }
-  const step=a.lotStep||0.01;
-  const floored=Math.floor((raw+1e-12)/step)*step;
-  return Math.max(0,Math.min(a.maxLot||100,Number(floored.toFixed(4))));
+
+  if(!selected) return 0;
+  const minimum=Math.max(Number(state.settings.lotMinimum)||0.01, Number(a.minLot)||0.01);
+  const step=Number(a.lotStep)||0.01;
+  const lot=Math.floor((Number(selected.lot)||0)/step+1e-12)*step;
+  return Number(Math.max(minimum,Math.min(a.maxLot||100,lot)).toFixed(4));
+}
+function lotSuggestion(balance,profile){
+  const b=Number(balance)||0;
+  if(b<100) return {lot:0,warning:"Capital abaixo do primeiro nível de gerenciamento (US$100)."};
+  return {lot:calcLot(b,profile),warning:""};
 }
 function pointsToMoney(points, lot, a=asset()){
   // XAUUSD rule: 100 Nexora points = 1.00 price movement.
@@ -204,7 +249,7 @@ function renderDashboard(){
   const profile=state.settings.defaultProfile, lot=calcLot(bal,profile), a=asset();
   const initial=Number(state.settings.initialBalance)||0, capDiff=bal-initial;
   const rows=[]; const base=Math.max(50,Math.floor(bal/50)*50);
-  for(let i=-2;i<=8;i++){ const b=Math.max(50,base+i*50); rows.push({b,lot:calcLot(b,"Moderado")}); }
+  for(let i=-2;i<=8;i++){ const b=Math.max(100,base+i*25); rows.push({b,lot:calcLot(b,profile)}); }
   document.getElementById("view-dashboard").innerHTML=`
     <div class="grid grid-4">
       ${cardMetric("Saldo atual",money(bal),`Inicial ${money(initial)}`)}
@@ -221,10 +266,10 @@ function renderDashboard(){
           <div><span class="kicker">100 pts</span><div class="v">${money(pointsToMoney(100,lot,a))}</div></div>
           <div><span class="kicker">Stop diário</span><div class="v">${num(state.settings.dailyStopPoints,0)} pts</div></div>
         </div>
-        <div class="callout section-space"><strong>Escala de lote Moderado</strong><span class="note">A cada US$50 alcançados, o lote é recalculado e arredondado para baixo.</span></div>
+        <div class="callout section-space"><strong>Gerenciamento por perfil</strong><span class="note">O lote sugerido vem da tabela editável do perfil selecionado em Configurações.</span></div>
       </div>
       <div class="card">
-        <div class="card-header"><div><h2>Escala de lote</h2><p>US$100 = 0,05 · US$150 = 0,07 · US$200 = 0,10</p></div><span class="pill green">MODERADO</span></div>
+        <div class="card-header"><div><h2>Escala de lote</h2><p>${esc(profile)} · tabela de gerenciamento</p></div><span class="pill green">${esc(profile)}</span></div>
         <div class="table-wrap"><table><thead><tr><th>Saldo</th><th>Lote</th></tr></thead><tbody>
           ${rows.map(r=>`<tr ${Math.abs(r.b-bal)<25?'style="background:var(--panel)"':''}><td>${money(r.b)}</td><td><strong>${num(r.lot,2)}</strong></td></tr>`).join("")}
         </tbody></table></div>
@@ -455,36 +500,163 @@ function renderAssets(){
 }
 
 function renderSettings(){
+  const tab=state.settings.activeSettingsTab||"geral";
+  normalizeLotRules();
+
+  const tabs=[
+    ["geral","Gerenciamento"],
+    ["lotes","Perfis de lote"],
+    ["capital","Depósitos e saques"],
+    ["ativos","Ativos"]
+  ];
+
   document.getElementById("view-settings").innerHTML=`
-    <div class="grid grid-2">
-      <div class="card"><div class="card-header"><div><h2>Conta e operação</h2><p>Parâmetros principais da Planilha Nexora.</p></div></div>
-        <form id="settings-form" class="form-grid">
-          <div class="field"><label>Capital inicial (US$)</label><input name="initial" type="number" step="0.01" value="${state.settings.initialBalance}"></div>
-          <div class="field"><label>Saldo atual (US$)</label><input name="current" type="number" step="0.01" value="${state.settings.currentBalance}"></div>
-          <div class="field"><label>Stop operacional diário (pts)</label><input name="stop" type="number" value="${state.settings.dailyStopPoints}"></div>
-          <div class="field"><label>Meta diária (pts)</label><input name="target" type="number" value="${state.settings.dailyTargetPoints}"></div>
-          <div class="field"><label>Ativo padrão</label><select name="asset">${Object.keys(state.assets).map(x=>`<option ${x===state.settings.defaultAsset?"selected":""}>${x}</option>`).join("")}</select></div>
-          <div class="field"><label>Perfil padrão</label><select name="profile">${Object.keys(state.profiles).map(x=>`<option ${x===state.settings.defaultProfile?"selected":""}>${x}</option>`).join("")}</select></div>
-          <div class="actions full"><button class="btn primary">Salvar configurações</button><button type="button" class="btn danger" id="reset-data">Restaurar dados de fábrica</button></div>
-        </form>
+    <div class="card">
+      <div class="card-header">
+        <div><h2>Configurações</h2><p>Todos os parâmetros administrativos e de gerenciamento da Nexora ficam centralizados aqui.</p></div>
       </div>
-      <div class="card"><div class="card-header"><div><h2>Perfis de lote</h2><p>Regra definida: lote por cada US$100, sempre arredondando para baixo.</p></div></div>
-        ${Object.entries(state.profiles).map(([k,v])=>`<div class="inline section-space" style="justify-content:space-between"><span>${esc(k)}</span><strong>${num(v,2)} lote / US$100</strong></div>`).join("")}
-        <div class="callout section-space"><strong>Arquitetura preparada para Supabase</strong><span class="note">A V1 funciona localmente sem dependências externas. O projeto inclui um schema SQL para migrar usuários, contas, ativos, sessões, operações e movimentações para Supabase sem alterar o motor de cálculos.</span></div>
+      <div class="tabs">
+        ${tabs.map(([id,label])=>`<button class="tab-btn ${tab===id?"active":""}" data-settings-tab="${id}">${label}</button>`).join("")}
       </div>
+    </div>
+    <div class="section-space">${renderSettingsTab(tab)}</div>`;
+
+  document.querySelectorAll("[data-settings-tab]").forEach(btn=>btn.onclick=()=>{
+    state.settings.activeSettingsTab=btn.dataset.settingsTab;
+    save();render();
+  });
+
+  bindSettingsTab(tab);
+}
+
+function renderSettingsTab(tab){
+  if(tab==="geral"){
+    const suggestion=lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile);
+    return `
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-header"><div><h2>Gerenciamento de capital</h2><p>Valores sempre em dólar.</p></div></div>
+          <form id="settings-general-form" class="form-grid">
+            <div class="field"><label>Capital inicial (US$)</label><input name="initial" type="number" step="0.01" value="${state.settings.initialBalance}"></div>
+            <div class="field"><label>Saldo atual (US$)</label><input name="current" type="number" step="0.01" value="${state.settings.currentBalance}"></div>
+            <div class="field"><label>Busca mínima diária (%)</label><input name="minSearch" type="number" min="0" step="0.1" value="${state.settings.minDailySearchPercent??20}"></div>
+            <div class="field"><label>Stop operacional diário (Pontos Nexora)</label><input name="stop" type="number" value="${state.settings.dailyStopPoints}"></div>
+            <div class="field"><label>Meta operacional em pontos</label><input name="target" type="number" value="${state.settings.dailyTargetPoints}"></div>
+            <div class="field"><label>Lote mínimo permitido</label><input name="lotMinimum" type="number" min="0.01" step="0.01" value="${state.settings.lotMinimum}"></div>
+            <div class="field"><label>Perfil padrão</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===state.settings.defaultProfile?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+            <div class="field"><label>Ativo padrão</label><select name="asset">${Object.keys(state.assets).map(x=>`<option ${x===state.settings.defaultAsset?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+            <div class="actions full"><button class="btn primary">Salvar gerenciamento</button></div>
+          </form>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><h2>Sugestão atual</h2><p>O lote é consultado na tabela do perfil selecionado.</p></div><span class="pill">${esc(state.settings.defaultProfile)}</span></div>
+          ${suggestion.warning?`<div class="callout"><strong>${esc(suggestion.warning)}</strong><span class="note">A Nexora não inventa um lote abaixo do primeiro nível.</span></div>`:`
+            <div class="stat-strip">
+              <div><span class="kicker">Saldo</span><div class="v">${money(state.settings.currentBalance)}</div></div>
+              <div><span class="kicker">Busca mínima</span><div class="v">${num(state.settings.minDailySearchPercent??20,1)}%</div></div>
+              <div><span class="kicker">Meta mínima US$</span><div class="v">${money(state.settings.currentBalance*(state.settings.minDailySearchPercent??20)/100)}</div></div>
+              <div><span class="kicker">Lote sugerido</span><div class="v">${num(suggestion.lot,2)}</div></div>
+            </div>`}
+        </div>
+      </div>`;
+  }
+
+  if(tab==="lotes"){
+    const profile=state.settings.activeLotProfile||"Moderado 1";
+    const rules=state.settings.lotRules[profile]||[];
+    return `
+      <div class="card">
+        <div class="card-header">
+          <div><h2>Tabela de gerenciamento por lote</h2><p>Cada perfil possui sua própria tabela. O valor usado é o maior nível que o saldo atual já alcançou.</p></div>
+          <select id="lot-profile-select">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===profile?"selected":""}>${esc(x)}</option>`).join("")}</select>
+        </div>
+        <div class="callout"><strong>Regra abaixo de US$100</strong><span class="note">Abaixo do primeiro nível, a Nexora mostra "capital abaixo do primeiro nível" e não sugere lote automaticamente.</span></div>
+        <div class="table-wrap section-space"><table><thead><tr><th>Capital (US$)</th><th>Lote sugerido</th><th>Ação</th></tr></thead><tbody>
+          ${rules.slice(0,80).map((r,i)=>`<tr><td><input class="inline-edit lot-balance" data-i="${i}" type="number" step="25" value="${r.balance}"></td><td><input class="inline-edit lot-value" data-i="${i}" type="number" min="0.01" step="0.01" value="${r.lot.toFixed(2)}"></td><td><button class="btn secondary" data-save-lot-row="${i}">Salvar</button></td></tr>`).join("")}
+        </tbody></table></div>
+        <div class="actions"><button class="btn primary" id="save-lot-table">Salvar tabela ${esc(profile)}</button></div>
+      </div>`;
+  }
+
+  if(tab==="capital"){
+    const deps=state.capitalMovements.filter(x=>x.type==="deposit").reduce((s,x)=>s+Number(x.amount),0);
+    const wds=state.capitalMovements.filter(x=>x.type==="withdraw").reduce((s,x)=>s+Number(x.amount),0);
+    return `
+      <div class="grid grid-3">${cardMetric("Saldo atual",money(state.settings.currentBalance),"saldo operacional")}${cardMetric("Depósitos",money(deps),"total")}${cardMetric("Saques",money(wds),"total")}</div>
+      <div class="grid grid-2 section-space">
+        <div class="card"><div class="card-header"><div><h2>Nova movimentação</h2><p>Depósitos e saques não são resultados de operação.</p></div></div>
+          <form id="settings-capital-form" class="form-grid">
+            <div class="field"><label>Tipo</label><select name="type"><option value="deposit">Depósito</option><option value="withdraw">Saque</option></select></div>
+            <div class="field"><label>Valor (US$)</label><input name="amount" type="number" step="0.01" required></div>
+            <div class="field"><label>Data</label><input name="date" type="date" value="${todayStr()}"></div>
+            <div class="field"><label>Observação</label><input name="note"></div>
+            <div class="actions full"><button class="btn primary">Registrar movimentação</button></div>
+          </form>
+        </div>
+        <div class="card"><div class="card-header"><div><h2>Histórico</h2><p>Movimentações editáveis em etapa posterior.</p></div></div>
+          ${state.capitalMovements.length?`<div class="table-wrap"><table><thead><tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Observação</th></tr></thead><tbody>${state.capitalMovements.map(x=>`<tr><td>${x.date}</td><td>${x.type==="deposit"?"Depósito":"Saque"}</td><td class="${x.type==="deposit"?"positive":"negative"}">${x.type==="deposit"?"+":"-"}${money(x.amount)}</td><td>${esc(x.note||"")}</td></tr>`).join("")}</tbody></table></div>`:`<div class="empty">Nenhuma movimentação.</div>`}
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="card">
+      <div class="card-header"><div><h2>Cadastro de ativos</h2><p>Todos os ativos ficam dentro de Configurações.</p></div><button class="btn primary" id="new-asset-settings">+ Novo ativo</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Ativo</th><th>Contrato</th><th>Pontos / 1,00 preço</th><th>Min lote</th><th>Step</th><th>Comissão/lote</th></tr></thead><tbody>${Object.values(state.assets).map(a=>`<tr><td><strong>${esc(a.symbol)}</strong><br><span class="note">${esc(a.name)}</span></td><td>${num(a.contractSize,0)}</td><td>${num(a.nexoraPointsPerPriceUnit,0)}</td><td>${num(a.minLot,2)}</td><td>${num(a.lotStep,2)}</td><td>${money(a.commissionPerLotRoundTurn)}</td></tr>`).join("")}</tbody></table></div>
     </div>`;
-  document.getElementById("settings-form").onsubmit=e=>{
-    e.preventDefault();const f=new FormData(e.target);
-    state.settings.initialBalance=Number(f.get("initial"))||0;
-    state.settings.currentBalance=Number(f.get("current"))||0;
-    state.settings.dailyStopPoints=Number(f.get("stop"))||500;
-    state.settings.dailyTargetPoints=Number(f.get("target"))||500;
-    state.settings.defaultAsset=f.get("asset"); state.settings.defaultProfile=f.get("profile");
-    save();toast("Configurações salvas.");render();
-  };
-  document.getElementById("reset-data").onclick=()=>{
-    if(confirm("Restaurar todos os dados da V1? Isso apaga operações, sessões e movimentações locais.")){state=structuredClone(defaultState);save();toast("Dados restaurados.");render();}
-  };
+}
+
+function bindSettingsTab(tab){
+  if(tab==="geral"){
+    const f=document.getElementById("settings-general-form");
+    if(f) f.onsubmit=e=>{
+      e.preventDefault();const d=new FormData(f);
+      state.settings.initialBalance=Number(d.get("initial"))||0;
+      state.settings.currentBalance=Number(d.get("current"))||0;
+      state.settings.minDailySearchPercent=Math.max(0,Number(d.get("minSearch"))||20);
+      state.settings.dailyStopPoints=Number(d.get("stop"))||500;
+      state.settings.dailyTargetPoints=Number(d.get("target"))||500;
+      state.settings.lotMinimum=Math.max(0.01,Number(d.get("lotMinimum"))||0.01);
+      state.settings.defaultProfile=d.get("profile");
+      state.settings.defaultAsset=d.get("asset");
+      save();toast("Gerenciamento atualizado.");render();
+    };
+  }
+  if(tab==="lotes"){
+    const sel=document.getElementById("lot-profile-select");
+    if(sel) sel.onchange=()=>{state.settings.activeLotProfile=sel.value;save();render();};
+    document.querySelectorAll("[data-save-lot-row]").forEach(btn=>btn.onclick=()=>{
+      const i=Number(btn.dataset.saveLotRow), profile=state.settings.activeLotProfile||"Moderado 1";
+      const bal=document.querySelector(`.lot-balance[data-i="${i}"]`), lot=document.querySelector(`.lot-value[data-i="${i}"]`);
+      if(!bal||!lot)return;
+      state.settings.lotRules[profile][i]={balance:Math.max(100,Number(bal.value)||100),lot:Math.max(0.01,Number(lot.value)||0.01)};
+      state.settings.lotRules[profile].sort((a,b)=>a.balance-b.balance);
+      save();toast("Linha do perfil atualizada.");render();
+    });
+    const saveAll=document.getElementById("save-lot-table");
+    if(saveAll) saveAll.onclick=()=>{save();toast("Tabela de lotes salva.");render();};
+  }
+  if(tab==="capital"){
+    const f=document.getElementById("settings-capital-form");
+    if(f) f.onsubmit=e=>{
+      e.preventDefault();const d=new FormData(f),type=d.get("type"),amount=Math.abs(Number(d.get("amount"))||0);if(!amount)return;
+      state.capitalMovements.unshift({id:uid(),type,amount,date:d.get("date"),note:d.get("note")});
+      state.settings.currentBalance=Number((state.settings.currentBalance+(type==="deposit"?amount:-amount)).toFixed(2));
+      save();toast("Movimentação registrada.");render();
+    };
+  }
+  if(tab==="ativos"){
+    const b=document.getElementById("new-asset-settings");
+    if(b)b.onclick=()=>{
+      const symbol=prompt("Símbolo do ativo (ex.: NAS100):");if(!symbol)return;
+      const name=prompt("Nome:")||symbol;
+      const contractSize=Number(prompt("Tamanho do contrato:","1"))||1;
+      const pointsPerPrice=Number(prompt("Pontos Nexora por 1,00 de preço:","100"))||100;
+      const commissionRT=Number(prompt("Comissão por lote round turn (US$):","0"))||0;
+      state.assets[symbol.toUpperCase()]={symbol:symbol.toUpperCase(),name,priceUnit:1/pointsPerPrice,nexoraPointsPerPriceUnit:pointsPerPrice,contractSize,minLot:0.01,lotStep:0.01,commissionPerLotRoundTurn:commissionRT,avgSpread:0};
+      save();toast("Ativo adicionado.");render();
+    };
+  }
 }
 
 document.addEventListener("click",e=>{
@@ -543,6 +715,9 @@ state.sessions=Array.isArray(state.sessions)?state.sessions:[];
 state.operations=Array.isArray(state.operations)?state.operations:[];
 if(!state.projection)state.projection={name:'Projeto principal',initialBalance:60,target:1000,dailyPercent:30,activeProfile:'Moderado',asset:'XAUUSD'};
 if(!state.projection.dailyPercent)state.projection.dailyPercent=30;
+if(state.settings.minDailySearchPercent===undefined)state.settings.minDailySearchPercent=20;
+if(state.settings.lotMinimum===undefined)state.settings.lotMinimum=0.01;
+normalizeLotRules();
 rebuildCurrentBalance();save();
 nav(); render();function renderSessionsTable(){
   if(!state.sessions.length)return `<div class="empty">Nenhuma sessão registrada.</div>`;

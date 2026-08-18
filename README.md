@@ -94,3 +94,15 @@ Ao registrar manualmente uma sessão, o resultado real passa a atualizar o saldo
 
 ## V1.3.1 — Correção de inicialização
 Restauradas as rotinas de Operações e Calculadora que foram removidas acidentalmente na V1.3. A aplicação volta a inicializar todas as páginas antes de renderizar o Dashboard.
+
+
+## V1.4 — Configurações centralizadas e tabelas de lote
+
+- Busca mínima diária configurável; padrão 20%.
+- Lote mínimo configurável; padrão 0,01.
+- Tabelas independentes e editáveis por perfil.
+- Perfis: Conservador, Moderado, Moderado 1 (recomendado) e Agressivo.
+- Abaixo de US$100 não há sugestão automática de lote.
+- Depósitos e saques movidos para Configurações > Depósitos e saques.
+- Cadastro de ativos movido para Configurações > Ativos.
+- Menu lateral reduzido, removendo Capital e Ativos.
