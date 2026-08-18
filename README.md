@@ -151,3 +151,13 @@ Restauradas as rotinas de Operações e Calculadora que foram removidas acidenta
 - Resultado acima/abaixo da projeção altera automaticamente o saldo de partida da próxima sessão projetada.
 - Status de linhas futuras pode ser avançado manualmente.
 - Lote de entrada é calculado a partir do saldo inicial daquela sessão e do perfil configurado.
+
+
+## V1.8 — Saldo acumulado correto
+
+- Saldo atual passa a ser calculado como: saldo inicial do projeto + depósitos - saques + soma de todos os resultados líquidos das operações.
+- A base não depende mais de um saldo operacional antigo que poderia fazer a projeção mostrar apenas o lucro.
+- Dashboard passa a mostrar saldo atual, resultado acumulado e performance calculados sobre o capital inicial do projeto.
+- Projeção operacional utiliza o saldo acumulado real como ponto de partida de cada sessão.
+- Sessões reais propagam seus ganhos e perdas para a próxima linha da projeção.
+- Depósitos e saques registrados também entram no cálculo do saldo.

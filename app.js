@@ -188,20 +188,41 @@ function overall(){
   return {net,points,wins,losses,count:ops.length,winRate:(wins+losses)?wins/(wins+losses)*100:0,maxDD};
 }
 
-function rebuildCurrentBalance(){
-  // Não sobrescreve o saldo atual de uma instalação já existente quando
-  // ainda não há movimentações/operações cadastradas.
-  if(!state.operations.length && !state.capitalMovements.length) return;
-  if(state.settings.operationalBaseBalance===undefined){
-    state.settings.operationalBaseBalance=Number(state.settings.currentBalance)||0;
-  }
-  const base=Number(state.settings.operationalBaseBalance)||0;
-  const movements=state.capitalMovements.reduce((sum,x)=>{
-    const v=Number(x.amount)||0;
+function projectInitialBalance(){
+  const p=state.projection||{};
+  const v=Number(p.initialBalance);
+  if(Number.isFinite(v)) return v;
+  return Number(state.settings.initialBalance)||0;
+}
+function capitalMovementDelta(){
+  return (state.capitalMovements||[]).reduce((sum,x)=>{
+    const v=Math.abs(Number(x.amount)||0);
     return sum+(x.type==="deposit"?v:-v);
   },0);
-  const ops=state.operations.reduce((sum,o)=>sum+(Number(o.net)||0),0);
-  state.settings.currentBalance=Number((base+movements+ops).toFixed(2));
+}
+function calculatedAccountBalance(){
+  return Number((projectInitialBalance()+capitalMovementDelta()+
+    (state.operations||[]).reduce((sum,o)=>sum+(Number(o.net)||0),0)).toFixed(2));
+}
+function balanceBeforeSession(sessionId){
+  const sessions=[...state.sessions].filter(s=>s.status==="closed"||s.id===sessionId)
+    .sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
+  let bal=projectInitialBalance();
+  const movements=[...(state.capitalMovements||[])].sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
+  let mi=0;
+  for(const s of sessions){
+    while(mi<movements.length && String(movements[mi].date||"")<=String(s.date||"")){
+      const m=movements[mi++];
+      bal+=(m.type==="deposit"?1:-1)*Math.abs(Number(m.amount)||0);
+    }
+    if(s.id===sessionId) return Number(bal.toFixed(2));
+    bal+=Number(sessionSummary(s.id).net)||0;
+  }
+  return Number(bal.toFixed(2));
+}
+function rebuildCurrentBalance(){
+  state.settings.currentBalance=calculatedAccountBalance();
+  state.settings.operationalBaseBalance=projectInitialBalance();
 }
 function sessionOperations(sessionId){ return state.operations.filter(o=>o.sessionId===sessionId); }
 function sessionSummary(sessionId){
@@ -248,14 +269,15 @@ function cardMetric(label,value,sub="",cls=""){
 function renderDashboard(){
   const s=sessionTotals(), o=overall(), bal=Number(state.settings.currentBalance)||0;
   const profile=state.settings.defaultProfile, sug=lotSuggestion(bal,profile);
-  const initial=Number(state.settings.initialBalance)||0;
+  const initial=projectInitialBalance();
   const generalPct=initial?(bal-initial)/initial*100:0;
   const closed=[...state.sessions].filter(x=>x.status==="closed").sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
   const days=operationalDays();
   document.getElementById("view-dashboard").innerHTML=`
     <div class="grid grid-4">
-      ${cardMetric("Saldo atual",money(bal),`Inicial ${money(initial)}`)}
+      ${cardMetric("Saldo atual",money(bal),`Inicial do projeto ${money(initial)}`)}
       ${cardMetric("Resultado hoje",money(s.net),`${num(s.points,0)} pontos`,s.net>=0?"positive":"negative")}
+      ${cardMetric("Resultado acumulado",money(bal-initial),`Lucros e perdas desde o início`,(bal-initial)>=0?"positive":"negative")}
       ${cardMetric("Performance geral",pct(generalPct),"saldo atual × capital inicial",generalPct>=0?"positive":"negative")}
       ${cardMetric("Win rate",pct(o.winRate),`${o.wins} wins / ${o.losses} losses`)}
     </div>
@@ -274,7 +296,7 @@ function renderDashboard(){
         <div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Data</th><th>Resultado</th><th>% da sessão</th></tr></thead><tbody>
         ${closed.length?closed.slice(-12).map((ss,i)=>{const t=sessionSummary(ss.id), n=operationalSessionNumber(ss.date,ss.id);return `<tr><td>${n}</td><td>${ss.date}</td><td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td><td class="${sessionPercent(ss)>=0?'positive':'negative'}">${pct(sessionPercent(ss))}</td></tr>`}).join(""):`<tr><td colspan="4"><div class="empty">Nenhuma sessão encerrada.</div></td></tr>`}
         </tbody></table></div>
-        <div class="callout section-space"><strong>Resultado geral: ${pct(generalPct)}</strong><span class="note">Calculado sobre o capital inicial do projeto/conta.</span></div>
+        <div class="callout section-space"><strong>Saldo do projeto: ${money(initial)} + ${money(bal-initial)} = ${money(bal)}</strong><span class="note">O saldo atual é recalculado pelo saldo inicial do projeto, somando todos os resultados líquidos das operações e os depósitos/saques registrados.</span></div>
       </div>
     </div>
     <div class="card section-space">
@@ -354,7 +376,7 @@ function renderSession(){
     e.preventDefault();
     if(state.activeSessionId){toast("Já existe uma sessão aberta.");return;}
     const f=new FormData(form), date=f.get("date");
-    const item={id:uid(),date,startTime:f.get("startTime"),endTime:"",asset:f.get("asset"),profile:f.get("profile"),searchPercent:Number(f.get("searchPercent"))||20,targetPoints:Number(f.get("targetPoints"))||0,stopPoints:Number(f.get("stopPoints"))||0,context:f.get("context")||"",journal:"",status:"open",balanceBefore:Number(state.settings.currentBalance)||0,createdAt:new Date().toISOString(),sessionNumber:state.sessions.filter(s=>s.date===date).length+1};
+    const item={id:uid(),date,startTime:f.get("startTime"),endTime:"",asset:f.get("asset"),profile:f.get("profile"),searchPercent:Number(f.get("searchPercent"))||20,targetPoints:Number(f.get("targetPoints"))||0,stopPoints:Number(f.get("stopPoints"))||0,context:f.get("context")||"",journal:"",status:"open",balanceBefore:calculatedAccountBalance(),createdAt:new Date().toISOString(),sessionNumber:state.sessions.filter(s=>s.date===date).length+1};
     state.sessions.push(item); state.activeSessionId=item.id; save(); toast(`Sessão ${item.sessionNumber} iniciada.`); render();
   };
 }
@@ -441,40 +463,41 @@ function operationalDays(){
   return Object.values(days).sort((a,b)=>a.date.localeCompare(b.date)).map(d=>({...d,pct:d.base?d.net/d.base*100:0}));
 }
 function projectSessionRows(p,real,target){
-  const closed=state.sessions.filter(s=>s.status==="closed").sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
+  const closed=state.sessions.filter(s=>s.status==="closed")
+    .sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
   const rows=[];
-  let projectedBalance=Number(p.initialBalance)||0;
+  let runningBalance=projectInitialBalance();
   let i=0;
   const maxRows=Math.min(500,Math.max(closed.length+10,20));
 
-  while(projectedBalance<target && i<maxRows){
-    const x=projectionSession(p,p.activeProfile,projectedBalance);
-    if(x.dailyTarget<=0)break;
-
+  while(runningBalance<target && i<maxRows){
     const actual=closed[i]||null;
-    const before=actual?Number(actual.balanceBefore??projectedBalance):projectedBalance;
-    const lot=calcLot(before,p.activeProfile);
-    const a=state.assets[actual?.asset||p.asset]||asset();
+    // Every real session starts from the cumulative balance produced by:
+    // project initial + capital movements + every previous win/loss.
+    const before=actual?balanceBeforeSession(actual.id):runningBalance;
     const plannedPercent=Number(p.projectionPercent||p.dailyPercent)||30;
     const searchMoney=before*plannedPercent/100;
+    const lot=calcLot(before,p.activeProfile);
+    const a=state.assets[actual?.asset||p.asset]||asset();
     const points=lot>0?moneyToPoints(searchMoney,lot,a):0;
-    const stopMoney=lot>0?pointsToMoney(Number(actual?.stopPoints??state.settings.dailyStopPoints)||0,lot,a):0;
+    const stopPoints=Number(actual?.stopPoints??state.settings.dailyStopPoints)||0;
+    const stopMoney=lot>0?pointsToMoney(stopPoints,lot,a):0;
     const winBalance=Math.min(target,before+searchMoney);
     const lossBalance=Math.max(0,before-stopMoney);
     const actualNet=actual?sessionSummary(actual.id).net:null;
-    const actualAfter=actual?Number(actual.balanceAfter??(before+actualNet)):null;
+    const actualAfter=actual?Number((before+actualNet).toFixed(2)):null;
     const realPct=actual&&before?actualNet/before*100:null;
 
     let status=actual?"CONCLUÍDA":(i===closed.length?"PRÓXIMA":"PROJETADA");
     if(p.projectionRowOverrides[String(i)]==="ADVANCED")status="AVANÇADA";
+
     rows.push({
       n:i+1,before,percent:plannedPercent,realPct,goal:searchMoney,real:actualNet,
-      lot,points,winBalance,lossBalance,actualAfter,status,
-      sessionId:actual?.id||null
+      lot,points,winBalance,lossBalance,actualAfter,status,sessionId:actual?.id||null
     });
 
-    projectedBalance=actual?actualAfter:winBalance;
-    if(projectedBalance>=target)break;
+    runningBalance=actual?actualAfter:winBalance;
+    if(runningBalance>=target)break;
     i++;
   }
   return rows;
@@ -482,7 +505,7 @@ function projectSessionRows(p,real,target){
 
 function renderProjection(){
   const p=ensureProjectionState();
-  const real=Number(state.settings.currentBalance)||0;
+  const real=calculatedAccountBalance();
   const initial=Number(p.initialBalance)||0,target=Number(p.target)||0;
   const stages=projectionStages(p);
   const stage=currentProjectionStage(p,real);
@@ -883,7 +906,9 @@ function bindSettingsTab(tab){
         projectionRowOverrides:p.projectionRowOverrides||{}
       };
       // The project opening balance is also the account balance when creating/resetting its project base.
-      state.settings.currentBalance=Number(state.settings.currentBalance)||initial;
+      if(!state.operations.length && !state.capitalMovements.length)state.settings.currentBalance=initial;
+      state.settings.operationalBaseBalance=initial;
+      rebuildCurrentBalance();
       save();toast("Projeto salvo com sucesso.");render();
     };
 
@@ -974,6 +999,7 @@ document.addEventListener("click",e=>{
     if(sess.status==="open"){
       const t=sessionSummary(sess.id);
       sess.status="closed"; sess.endTime=new Date().toTimeString().slice(0,5);
+      rebuildCurrentBalance();
       sess.balanceAfter=Number(state.settings.currentBalance)||0;
       sess.summary={count:t.count,exposure:t.exposure,points:t.points,net:t.net,gross:t.gross,commission:t.commission,wins:t.wins,losses:t.losses};
       const px=projectionSession(ensureProjectionState(),sess.profile,sess.balanceBefore);
