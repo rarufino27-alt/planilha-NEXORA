@@ -90,3 +90,7 @@ Ao registrar manualmente uma sessão, o resultado real passa a atualizar o saldo
 - Operações vinculadas à sessão e resumo automático ao encerrar.
 - Projeção em formato de planilha, com busca percentual dinâmica e sessões restantes.
 - Sessões e operações podem ser editadas depois do registro.
+
+
+## V1.3.1 — Correção de inicialização
+Restauradas as rotinas de Operações e Calculadora que foram removidas acidentalmente na V1.3. A aplicação volta a inicializar todas as páginas antes de renderizar o Dashboard.

@@ -143,7 +143,13 @@ function overall(){
 }
 
 function rebuildCurrentBalance(){
-  const base=Number(state.settings.initialBalance)||0;
+  // Não sobrescreve o saldo atual de uma instalação já existente quando
+  // ainda não há movimentações/operações cadastradas.
+  if(!state.operations.length && !state.capitalMovements.length) return;
+  if(state.settings.operationalBaseBalance===undefined){
+    state.settings.operationalBaseBalance=Number(state.settings.currentBalance)||0;
+  }
+  const base=Number(state.settings.operationalBaseBalance)||0;
   const movements=state.capitalMovements.reduce((sum,x)=>{
     const v=Number(x.amount)||0;
     return sum+(x.type==="deposit"?v:-v);
@@ -542,8 +548,100 @@ nav(); render();function renderSessionsTable(){
   if(!state.sessions.length)return `<div class="empty">Nenhuma sessão registrada.</div>`;
   return `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Horário</th><th>Ativo</th><th>Perfil</th><th>Ops</th><th>Exposição</th><th>Resultado</th><th>Status</th><th>Ação</th></tr></thead><tbody>${state.sessions.slice(0,50).map(s=>{const t=sessionSummary(s.id);return `<tr><td>${s.date}</td><td>${s.startTime}${s.endTime?` → ${s.endTime}`:""}</td><td>${esc(s.asset)}</td><td>${esc(s.profile)}</td><td>${t.count}</td><td>${money(t.exposure)}</td><td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td><td><span class="pill ${s.status==="open"?"amber":"green"}">${s.status==="open"?"Aberta":"Fechada"}</span></td><td><button class="btn secondary" data-edit-session="${s.id}">Editar</button>${s.status==="open"?` <button class="btn danger" data-close-session="${s.id}">Encerrar</button>`:""}</td></tr>`}).join("")}</tbody></table></div>`;
 }
+function renderOperations(){
+  const a=asset();
+  const openSessions=state.sessions.filter(s=>s.status==="open");
+  document.getElementById("view-operations").innerHTML=`
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-header"><div><h2>Lançamento detalhado</h2><p>Entrada + saída + resultado líquido do MT5.</p></div></div>
+        <form id="op-detailed" class="form-grid">
+          <div class="field"><label>Sessão</label><select name="sessionId" required>${openSessions.map(s=>`<option value="${s.id}" ${s.id===state.activeSessionId?'selected':''}>${s.date} · ${esc(s.strategy||'Sessão')}</option>`).join('')}</select></div>
+          <div class="field"><label>Data</label><input type="date" name="date" value="${todayStr()}" required></div>
+          <div class="field"><label>Horário</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" required></div>
+          <div class="field"><label>Ativo</label><select name="asset">${Object.values(state.assets).map(x=>`<option ${x.symbol===state.settings.defaultAsset?'selected':''}>${x.symbol}</option>`).join('')}</select></div>
+          <div class="field"><label>Direção</label><select name="direction"><option value="1">BUY</option><option value="-1">SELL</option></select></div>
+          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(calcLot(state.settings.currentBalance,state.settings.defaultProfile),2)}" required></div>
+          <div class="field"><label>Entrada</label><input type="number" step="0.01" name="entry" required></div>
+          <div class="field"><label>Saída</label><input type="number" step="0.01" name="exit" required></div>
+          <div class="field"><label>Resultado líquido MT5 (US$)</label><input type="number" step="0.01" name="net" required></div>
+          <div class="field"><label>Comissão MT5 (US$)</label><input type="number" step="0.01" name="commission" value="${commission(calcLot(state.settings.currentBalance,state.settings.defaultProfile),a).toFixed(2)}"></div>
+          <div class="field"><label>Estratégia</label><input name="strategy"></div>
+          <div class="field full"><label>Observação</label><textarea name="note"></textarea></div>
+          <div class="actions full"><button class="btn primary" ${openSessions.length?'':'disabled'}>Registrar operação</button></div>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><h2>Lançamento rápido</h2><p>Quando você já tem os dados finais do MT5.</p></div></div>
+        <form id="op-quick" class="form-grid">
+          <div class="field"><label>Sessão</label><select name="sessionId" required>${openSessions.map(s=>`<option value="${s.id}" ${s.id===state.activeSessionId?'selected':''}>${s.date} · ${esc(s.strategy||'Sessão')}</option>`).join('')}</select></div>
+          <div class="field"><label>Data</label><input type="date" name="date" value="${todayStr()}" required></div>
+          <div class="field"><label>Horário</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" required></div>
+          <div class="field"><label>Ativo</label><select name="asset">${Object.values(state.assets).map(x=>`<option ${x.symbol===state.settings.defaultAsset?'selected':''}>${x.symbol}</option>`).join('')}</select></div>
+          <div class="field"><label>Direção</label><select name="direction"><option value="1">BUY</option><option value="-1">SELL</option></select></div>
+          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(calcLot(state.settings.currentBalance,state.settings.defaultProfile),2)}"></div>
+          <div class="field"><label>Pontos Nexora</label><input type="number" step="1" name="points" required></div>
+          <div class="field"><label>Resultado líquido MT5 (US$)</label><input type="number" step="0.01" name="net" required></div>
+          <div class="field"><label>Comissão (US$)</label><input type="number" step="0.01" name="commission"></div>
+          <div class="field full"><label>Observação</label><textarea name="note"></textarea></div>
+          <div class="actions full"><button class="btn primary" ${openSessions.length?'':'disabled'}>Registrar lançamento rápido</button></div>
+        </form>
+      </div>
+    </div>
+    <div class="card section-space"><div class="card-header"><div><h2>Histórico</h2><p>Cada operação pertence a uma sessão e pode ser editada.</p></div></div>${renderOpsTable()}</div>`;
+
+  const detailed=document.getElementById("op-detailed");
+  if(detailed) detailed.onsubmit=e=>{
+    e.preventDefault(); const f=new FormData(e.target), aa=state.assets[f.get('asset')];
+    const points=pointsFromPrices(f.get('entry'),f.get('exit'),Number(f.get('direction')),aa);
+    const lot=Number(f.get('lot')), net=Number(f.get('net')), comm=Number(f.get('commission'))||0, gross=pointsToMoney(points,lot,aa);
+    addOperation({date:f.get('date'),time:f.get('time'),sessionId:f.get('sessionId'),asset:f.get('asset'),direction:Number(f.get('direction')),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:Number(f.get('entry')),exit:Number(f.get('exit')),strategy:f.get('strategy'),note:f.get('note'),mode:'detailed'});
+  };
+  const quick=document.getElementById("op-quick");
+  if(quick) quick.onsubmit=e=>{
+    e.preventDefault(); const f=new FormData(e.target), lot=Number(f.get('lot')), aa=state.assets[f.get('asset')], points=Number(f.get('points')), net=Number(f.get('net')), comm=Number(f.get('commission'))||0, gross=pointsToMoney(points,lot,aa);
+    addOperation({date:f.get('date'),time:f.get('time'),sessionId:f.get('sessionId'),asset:f.get('asset'),direction:Number(f.get('direction')),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:null,exit:null,strategy:'',note:f.get('note'),mode:'quick'});
+  };
+}
+function addOperation(o){
+  if(!o.sessionId){toast('Abra uma sessão antes de registrar a operação.');return;}
+  if(!state.activeSessionId) state.activeSessionId=o.sessionId;
+  state.operations.unshift({id:uid(),timestamp:new Date().toISOString(),...o});
+  rebuildCurrentBalance(); save(); toast('Operação registrada na sessão e saldo atualizado.'); render();
+}
 function renderOpsTable(){
   if(!state.operations.length)return `<div class="empty">Nenhuma operação registrada.</div>`;
   return `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Sessão</th><th>Ativo</th><th>Dir.</th><th>Lote</th><th>Pontos</th><th>Líquido MT5</th><th>Ação</th></tr></thead><tbody>${state.operations.slice(0,100).map(o=>{const s=state.sessions.find(x=>x.id===o.sessionId);return `<tr><td>${o.date} ${o.time||""}</td><td>${s?s.date:"—"}</td><td>${esc(o.asset)}</td><td>${o.direction===1?"BUY":"SELL"}</td><td>${num(o.lot,2)}</td><td>${num(o.points,0)}</td><td class="${o.net>=0?'positive':'negative'}">${money(o.net)}</td><td><button class="btn secondary" data-edit-op="${o.id}">Editar</button></td></tr>`}).join("")}</tbody></table></div><p class="note">As operações são vinculadas à sessão e podem ser editadas depois.</p>`;
 }
+
+function renderCalculator(){
+  document.getElementById("view-calculator").innerHTML=`
+    <div class="card">
+      <div class="card-header"><div><h2>Calculadora Nexora</h2><p>Converta pontos e dinheiro conforme o ativo e o lote.</p></div></div>
+      <div class="form-grid three">
+        <div class="field"><label>Ativo</label><select id="calc-asset">${Object.values(state.assets).map(a=>`<option>${a.symbol}</option>`).join("")}</select></div>
+        <div class="field"><label>Lote</label><input id="calc-lot" type="number" step="0.01" value="${num(calcLot(state.settings.currentBalance,state.settings.defaultProfile),2)}"></div>
+        <div class="field"><label>Pontos</label><input id="calc-points" type="number" step="1" value="500"></div>
+      </div>
+      <div class="grid grid-2 section-space">
+        <div class="result-box"><span class="kicker" style="color:#a8ceff">PONTOS → US$</span><div id="calc-money" class="big-number">$0.00</div><p class="muted">Resultado bruto teórico.</p></div>
+        <div class="card flat" style="background:#f8fbff"><div class="kicker">US$ → PONTOS</div><div class="field section-space"><label>Objetivo financeiro</label><input id="calc-target-money" type="number" step="0.01" value="100"></div><div id="calc-target-points" class="big-number">0 pts</div></div>
+      </div>
+      <div class="grid grid-3 section-space">
+        <div class="card flat"><div class="kicker">Comissão estimada</div><div id="calc-commission" class="big-number" style="font-size:24px">$0.00</div></div>
+        <div class="card flat"><div class="kicker">500 pts</div><div id="calc-500" class="big-number" style="font-size:24px">$0.00</div></div>
+        <div class="card flat"><div class="kicker">2.000 pts</div><div id="calc-2000" class="big-number" style="font-size:24px">$0.00</div></div>
+      </div>
+    </div>`;
+  const update=()=>{
+    const a=state.assets[document.getElementById("calc-asset").value], lot=Number(document.getElementById("calc-lot").value)||0, points=Number(document.getElementById("calc-points").value)||0, target=Number(document.getElementById("calc-target-money").value)||0;
+    document.getElementById("calc-money").textContent=money(pointsToMoney(points,lot,a));
+    document.getElementById("calc-target-points").textContent=`${num(moneyToPoints(target,lot,a),0)} pts`;
+    document.getElementById("calc-commission").textContent=money(commission(lot,a));
+    document.getElementById("calc-500").textContent=money(pointsToMoney(500,lot,a));
+    document.getElementById("calc-2000").textContent=money(pointsToMoney(2000,lot,a));
+  };
+  ["calc-asset","calc-lot","calc-points","calc-target-money"].forEach(id=>document.getElementById(id).oninput=update); update();
+}
+
 
