@@ -138,3 +138,16 @@ Restauradas as rotinas de Operações e Calculadora que foram removidas acidenta
 - A projeção operacional recalcula busca em US$, lote e pontos conforme o saldo projetado.
 - A Sessão Operacional passou a mostrar busca em US$, lote sugerido e o plano registrado da sessão.
 - Abertura e encerramento continuam sendo o único fluxo de controle da sessão.
+
+
+## V1.7 — Projeção real x planejada e Configurações
+
+- Tabs de Configurações redesenhadas com ícones, títulos, descrições e estado ativo.
+- Aba Geral explicitamente disponível.
+- Correção do salvamento da aba Projeto: o formulário agora é vinculado depois que a aba é renderizada.
+- Novo projeto e exclusão do projeto atual movidos/centralizados na aba Projeto com fluxo funcional.
+- Projeção operacional passa a usar cada sessão operacional real como fonte de verdade.
+- Cada linha mostra: saldo inicial do dia, busca %, % real, busca em US$, resultado real, lote, pontos, saldo em win, saldo em loss, saldo real e status.
+- Resultado acima/abaixo da projeção altera automaticamente o saldo de partida da próxima sessão projetada.
+- Status de linhas futuras pode ser avançado manualmente.
+- Lote de entrada é calculado a partir do saldo inicial daquela sessão e do perfil configurado.

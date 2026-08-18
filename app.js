@@ -224,7 +224,7 @@ function render(){
   const target=document.getElementById(`view-${currentView}`); if(target) target.classList.add("active");
   document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===currentView));
   document.getElementById("page-title").textContent={
-    dashboard:"Dashboard",session:"Nova sessão",operations:"Operações",calculator:"Calculadora",
+    dashboard:"Dashboard",session:"Sessão operacional",operations:"Operações",calculator:"Calculadora",
     projection:"Projeção & objetivos",journal:"Diário operacional",performance:"Performance",capital:"Capital",
     assets:"Ativos",settings:"Configurações"
   }[currentView];
@@ -386,6 +386,7 @@ function ensureProjectionState(){
   if(!Array.isArray(p.secondaryTargets))p.secondaryTargets=[];
   if(!Array.isArray(p.stageDeadlines))p.stageDeadlines=[];
   if(p.stageIndex===undefined)p.stageIndex=0;
+  if(!p.projectionRowOverrides||typeof p.projectionRowOverrides!=="object")p.projectionRowOverrides={};
   return p;
 }
 function projectionSession(p,profile,balance){
@@ -440,25 +441,41 @@ function operationalDays(){
   return Object.values(days).sort((a,b)=>a.date.localeCompare(b.date)).map(d=>({...d,pct:d.base?d.net/d.base*100:0}));
 }
 function projectSessionRows(p,real,target){
-  let bal=Number(p.initialBalance)||0;
-  const rows=[];
   const closed=state.sessions.filter(s=>s.status==="closed").sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
+  const rows=[];
+  let projectedBalance=Number(p.initialBalance)||0;
   let i=0;
-  while(bal<target && i<500){
-    const x=projectionSession(p,p.activeProfile,bal);
+  const maxRows=Math.min(500,Math.max(closed.length+10,20));
+
+  while(projectedBalance<target && i<maxRows){
+    const x=projectionSession(p,p.activeProfile,projectedBalance);
     if(x.dailyTarget<=0)break;
-    const after=Math.min(target,bal+x.dailyTarget);
-    const actual=closed[i];
+
+    const actual=closed[i]||null;
+    const before=actual?Number(actual.balanceBefore??projectedBalance):projectedBalance;
+    const lot=calcLot(before,p.activeProfile);
+    const a=state.assets[actual?.asset||p.asset]||asset();
+    const plannedPercent=Number(p.projectionPercent||p.dailyPercent)||30;
+    const searchMoney=before*plannedPercent/100;
+    const points=lot>0?moneyToPoints(searchMoney,lot,a):0;
+    const stopMoney=lot>0?pointsToMoney(Number(actual?.stopPoints??state.settings.dailyStopPoints)||0,lot,a):0;
+    const winBalance=Math.min(target,before+searchMoney);
+    const lossBalance=Math.max(0,before-stopMoney);
     const actualNet=actual?sessionSummary(actual.id).net:null;
-    const shownAfter=actual?Math.min(target,bal+actualNet):after;
+    const actualAfter=actual?Number(actual.balanceAfter??(before+actualNet)):null;
+    const realPct=actual&&before?actualNet/before*100:null;
+
+    let status=actual?"CONCLUÍDA":(i===closed.length?"PRÓXIMA":"PROJETADA");
+    if(p.projectionRowOverrides[String(i)]==="ADVANCED")status="AVANÇADA";
     rows.push({
-      n:i+1,before:bal,percent:Number(p.projectionPercent||p.dailyPercent)||30,
-      goal:x.dailyTarget,lot:x.lot,points:x.points,projectedAfter:after,
-      actualNet,actualAfter:shownAfter,
-      status:actual?"CONCLUÍDO":i===closed.length?"PRÓXIMA":"PROJETADO"
+      n:i+1,before,percent:plannedPercent,realPct,goal:searchMoney,real:actualNet,
+      lot,points,winBalance,lossBalance,actualAfter,status,
+      sessionId:actual?.id||null
     });
-    bal=actual?shownAfter:after;i++;
-    if(bal>=target)break;
+
+    projectedBalance=actual?actualAfter:winBalance;
+    if(projectedBalance>=target)break;
+    i++;
   }
   return rows;
 }
@@ -516,11 +533,27 @@ function renderProjection(){
     </div>
 
     <div class="card section-space">
-      <div class="card-header"><div><h2>Projeção operacional até a meta principal</h2><p>Calculada usando a busca diária selecionada. Após cada sessão real, o saldo real passa a alimentar a próxima linha.</p></div></div>
-      <div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Saldo partida</th><th>Busca %</th><th>Busca US$</th><th>Lote</th><th>Pontos</th><th>Saldo projetado</th><th>Resultado real</th><th>Status</th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td>${r.n}</td><td>${money(r.before)}</td><td>${num(r.percent,1)}%</td><td>${money(r.goal)}</td><td>${num(r.lot,2)}</td><td>${num(r.points,0)}</td><td>${money(r.projectedAfter)}</td><td class="${r.actualNet===null?'':r.actualNet>=0?'positive':'negative'}">${r.actualNet===null?"—":money(r.actualNet)}</td><td><span class="pill ${r.status==="CONCLUÍDO"?'green':r.status==="PRÓXIMA"?'amber':''}">${r.status}</span></td></tr>`).join("")}
+      <div class="card-header"><div><h2>Projeção operacional até a meta principal</h2><p>A projeção é recalculada sessão por sessão. Se a meta era US$20 e o resultado real foi US$40, a próxima sessão parte automaticamente do saldo real alcançado.</p></div></div>
+      <div class="table-wrap"><table><thead><tr>
+        <th>Sessão</th><th>Saldo inicial do dia</th><th>% Busca</th><th>% Real</th><th>$ Busca</th><th>$ Real</th>
+        <th>Lote de entrada</th><th>Pontos de busca</th><th>Saldo se Win</th><th>Saldo se Loss</th><th>Saldo real</th><th>Status</th>
+      </tr></thead><tbody>
+      ${rows.map(r=>`<tr>
+        <td>${r.n}</td>
+        <td>${money(r.before)}</td>
+        <td>${num(r.percent,1)}%</td>
+        <td class="${r.realPct===null?'':r.realPct>=0?'positive':'negative'}">${r.realPct===null?'—':pct(r.realPct)}</td>
+        <td>${money(r.goal)}</td>
+        <td class="${r.real===null?'':r.real>=0?'positive':'negative'}">${r.real===null?'—':money(r.real)}</td>
+        <td>${num(r.lot,2)}</td>
+        <td>${num(r.points,0)}</td>
+        <td>${money(r.winBalance)}</td>
+        <td>${money(r.lossBalance)}</td>
+        <td class="${r.actualAfter===null?'':r.actualAfter>=r.before?'positive':'negative'}">${r.actualAfter===null?'—':money(r.actualAfter)}</td>
+        <td><span class="pill ${r.status==="CONCLUÍDA"||r.status==="AVANÇADA"?"green":r.status==="PRÓXIMA"?"amber":""}">${r.status}</span>
+        ${r.status!=="CONCLUÍDA"&&r.status!=="AVANÇADA"?`<button class="btn secondary" data-advance-projection-row="${r.n-1}">Avançar</button>`:""}</td>
+      </tr>`).join("")}
       </tbody></table></div>
-      ${stage&&nextStageIndex!==null&&nextStageIndex<stages.length?`<div class="actions section-space"><button class="btn primary" data-advance-stage="${stage.index}">Avançar manualmente para a etapa ${nextStageIndex+1}</button></div>`:""}
     </div>
 
     <div class="callout section-space"><strong>Etapa atual</strong><span class="note">${stage?`Etapa ${stage.index+1}: ${money(stage.from)} → ${money(stage.to)} · aproximadamente ${remaining===null?"—":remaining+" sessões"} restantes.`:"A meta principal foi alcançada ou não há etapa ativa."}</span></div>
@@ -661,11 +694,11 @@ function renderSettings(){
   normalizeLotRules();
 
   const tabs=[
-    ["geral","Gerenciamento"],
-    ["projeto","Projeto"],
-    ["lotes","Perfis de lote"],
-    ["capital","Depósitos e saques"],
-    ["ativos","Ativos"]
+    ["geral","⚙️","Geral","Gerenciamento e parâmetros"],
+    ["projeto","🎯","Projeto","Meta principal e etapas"],
+    ["lotes","📊","Perfis de lote","Escalas de gerenciamento"],
+    ["capital","💵","Capital","Depósitos e saques"],
+    ["ativos","📈","Ativos","Instrumentos operacionais"]
   ];
 
   document.getElementById("view-settings").innerHTML=`
@@ -674,7 +707,7 @@ function renderSettings(){
         <div><h2>Configurações</h2><p>Todos os parâmetros administrativos e de gerenciamento da Nexora ficam centralizados aqui.</p></div>
       </div>
       <div class="tabs">
-        ${tabs.map(([id,label])=>`<button class="tab-btn ${tab===id?"active":""}" data-settings-tab="${id}">${label}</button>`).join("")}
+        ${tabs.map(([id,icon,label,desc])=>`<button class="tab-btn ${tab===id?"active":""}" data-settings-tab="${id}"><span class="tab-icon">${icon}</span><span class="tab-copy"><strong>${label}</strong><small>${desc}</small></span></button>`).join("")}
       </div>
     </div>
     <div class="section-space">${renderSettingsTab(tab)}</div>`;
@@ -704,7 +737,6 @@ function renderSettingsTab(tab){
             <div class="field"><label>Perfil padrão</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===state.settings.defaultProfile?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
             <div class="field"><label>Ativo padrão</label><select name="asset">${Object.keys(state.assets).map(x=>`<option ${x===state.settings.defaultAsset?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
             <div class="actions full"><button class="btn primary">Salvar gerenciamento</button></div>
-          <div class="actions full"><button type="button" class="btn secondary" id="new-project">Novo projeto</button><button type="button" class="btn danger" id="delete-project">Excluir projeto atual</button></div>
           </form>
         </div>
         <div class="card">
@@ -730,11 +762,11 @@ function renderSettingsTab(tab){
             <div class="field full"><label>Nome do projeto</label><input name="name" value="${esc(p.name)}"></div>
             <div class="field"><label>Saldo inicial do projeto (US$)</label><input name="initial" type="number" step="0.01" value="${p.initialBalance}"></div>
             <div class="field"><label>Meta principal (US$)</label><input name="target" type="number" step="0.01" value="${p.target}"></div>
-            <div class="field"><label>Busca projetada (%)</label><input name="dailyPercent" type="number" step="0.1" value="${p.dailyPercent}"></div>
+            <div class="field"><label>Busca padrão da projeção (%)</label><input name="dailyPercent" type="number" min="0.1" step="0.1" value="${p.projectionPercent||p.dailyPercent}"></div>
             <div class="field"><label>Metas secundárias</label><input name="secondaryCount" type="number" min="1" max="50" value="${p.secondaryCount}"></div>
             <div class="field"><label>Perfil do projeto</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===p.activeProfile?'selected':''}>${esc(x)}</option>`).join("")}</select></div>
             <div class="field"><label>Ativo principal</label><select name="asset">${Object.values(state.assets).map(a=>`<option ${a.symbol===p.asset?'selected':''}>${esc(a.symbol)}</option>`).join("")}</select></div>
-            <div class="actions full"><button class="btn primary">Salvar projeto</button></div>
+            <div class="actions full"><button class="btn primary" type="submit">Salvar projeto</button></div>
           </form>
         </div>
         <div class="card">
@@ -751,29 +783,6 @@ function renderSettingsTab(tab){
       </div>`;
   }
 
-  if(tab==="projeto"){
-    const f=document.getElementById("settings-project-form");
-    if(f)f.onsubmit=e=>{
-      e.preventDefault();const d=new FormData(f),p=ensureProjectionState();
-      state.projection={...p,name:d.get("name")||"Projeto principal",initialBalance:Number(d.get("initial"))||0,target:Number(d.get("target"))||0,dailyPercent:Number(d.get("dailyPercent"))||30,secondaryCount:Math.max(1,Math.min(50,Number(d.get("secondaryCount"))||5)),activeProfile:d.get("profile"),asset:d.get("asset")};
-      save();toast("Projeto atualizado.");render();
-    };
-    const np=document.getElementById("new-project-project");
-    if(np)np.onclick=()=>{
-      if(!confirm("Criar um novo projeto? Os registros atuais serão substituídos. Exporte um backup antes se necessário."))return;
-      const initial=Number(prompt("Saldo inicial do novo projeto (US$):","60"))||60;
-      const target=Number(prompt("Meta principal do novo projeto (US$):","1000"))||1000;
-      state.projection={name:"Novo projeto",initialBalance:initial,target,dailyPercent:Number(state.settings.minDailySearchPercent??20),secondaryCount:5,activeProfile:state.settings.defaultProfile,asset:state.settings.defaultAsset,mode:"compound",status:"active",startedAt:todayStr(),completedAt:""};
-      state.sessions=[];state.operations=[];state.journalEntries=[];state.activeSessionId=null;state.capitalMovements=[];
-      state.settings.currentBalance=initial;state.settings.operationalBaseBalance=initial;
-      save();toast("Novo projeto criado.");render();
-    };
-    const dp=document.getElementById("delete-project-project");
-    if(dp)dp.onclick=()=>{
-      if(!confirm("Excluir definitivamente o projeto atual e seus registros locais?"))return;
-      state=structuredClone(defaultState);normalizeLotRules();save();toast("Projeto excluído.");render();
-    };
-  }
   if(tab==="lotes"){
     const profile=state.settings.activeLotProfile||"Moderado 1";
     const rules=state.settings.lotRules[profile]||[];
@@ -848,6 +857,70 @@ function bindSettingsTab(tab){
     if(dp)dp.onclick=()=>{
       if(!confirm("Excluir definitivamente o projeto atual e seus registros locais?"))return;
       state=structuredClone(defaultState);normalizeLotRules();save();toast("Projeto excluído.");render();
+    };
+  }
+  if(tab==="projeto"){
+    const f=document.getElementById("settings-project-form");
+    if(f)f.onsubmit=e=>{
+      e.preventDefault();
+      const d=new FormData(f), p=ensureProjectionState();
+      const count=Math.max(1,Math.min(50,Number(d.get("secondaryCount"))||5));
+      const target=Math.max(0,Number(d.get("target"))||0);
+      const initial=Math.max(0,Number(d.get("initial"))||0);
+      state.projection={
+        ...p,
+        name:(d.get("name")||"Projeto principal").trim(),
+        initialBalance:initial,
+        target,
+        dailyPercent:Math.max(0.1,Number(d.get("dailyPercent"))||30),
+        projectionPercent:Math.max(0.1,Number(d.get("dailyPercent"))||30),
+        secondaryCount:count,
+        activeProfile:d.get("profile"),
+        asset:d.get("asset"),
+        secondaryTargets:milestoneTargets(initial,target,count,p.secondaryTargets).map(x=>x.to),
+        stageDeadlines:Array.from({length:count},(_,i)=>p.stageDeadlines?.[i]||0),
+        stageIndex:Math.min(Number(p.stageIndex)||0,count-1),
+        projectionRowOverrides:p.projectionRowOverrides||{}
+      };
+      // The project opening balance is also the account balance when creating/resetting its project base.
+      state.settings.currentBalance=Number(state.settings.currentBalance)||initial;
+      save();toast("Projeto salvo com sucesso.");render();
+    };
+
+    const np=document.getElementById("new-project-project");
+    if(np)np.onclick=()=>{
+      const initial=Number(prompt("Saldo inicial do novo projeto (US$):","60"));
+      if(!Number.isFinite(initial)||initial<0)return;
+      const target=Number(prompt("Meta principal do novo projeto (US$):","1000"));
+      if(!Number.isFinite(target)||target<=initial){toast("A meta principal deve ser maior que o saldo inicial.");return;}
+      const profile=state.settings.defaultProfile||"Moderado 1";
+      const assetKey=state.settings.defaultAsset||Object.keys(state.assets)[0];
+      state.projection={
+        name:"Novo projeto",initialBalance:initial,target,
+        dailyPercent:Number(state.settings.minDailySearchPercent??20)||20,
+        projectionPercent:Number(state.settings.minDailySearchPercent??20)||20,
+        secondaryCount:5,secondaryTargets:[],stageDeadlines:[],stageIndex:0,
+        activeProfile:profile,asset:assetKey,mode:"compound",status:"active",
+        startedAt:todayStr(),completedAt:"",projectionRowOverrides:{}
+      };
+      state.sessions=[];state.operations=[];state.journalEntries=[];state.activeSessionId=null;state.capitalMovements=[];
+      state.settings.currentBalance=initial;state.settings.operationalBaseBalance=initial;
+      save();toast("Novo projeto criado.");render();
+    };
+
+    const dp=document.getElementById("delete-project-project");
+    if(dp)dp.onclick=()=>{
+      if(!confirm("Excluir o projeto atual e TODOS os registros operacionais deste projeto? Esta ação é local e não pode ser desfeita sem backup."))return;
+      state.projection={
+        name:"Projeto principal",initialBalance:0,target:0,dailyPercent:20,projectionPercent:20,
+        secondaryCount:5,secondaryTargets:[],stageDeadlines:[],stageIndex:0,
+        activeProfile:state.settings.defaultProfile||"Moderado 1",
+        asset:state.settings.defaultAsset||Object.keys(state.assets)[0],
+        mode:"compound",status:"active",projectionRowOverrides:{}
+      };
+      state.sessions=[];state.operations=[];state.journalEntries=[];state.activeSessionId=null;state.capitalMovements=[];
+      state.settings.currentBalance=0;state.settings.operationalBaseBalance=0;
+      save();toast("Projeto atual excluído.");render();
     };
   }
   if(tab==="lotes"){
@@ -941,6 +1014,15 @@ document.addEventListener("click",e=>{
     rebuildCurrentBalance();
     state.sessions.forEach(ss=>{const t=sessionSummary(ss.id);if(ss.status==="closed"){ss.summary={count:t.count,exposure:t.exposure,points:t.points,net:t.net,gross:t.gross,commission:t.commission,wins:t.wins,losses:t.losses};ss.balanceAfter=Number((ss.balanceBefore+t.net).toFixed(2));}});
     save();toast("Operação atualizada.");render();
+    return;
+  }
+
+  const advanceRow=e.target.closest("[data-advance-projection-row]");
+  if(advanceRow){
+    const p=ensureProjectionState(),idx=Number(advanceRow.dataset.advanceProjectionRow);
+    if(!p.projectionRowOverrides||typeof p.projectionRowOverrides!=="object")p.projectionRowOverrides={};
+    p.projectionRowOverrides[String(idx)]="ADVANCED";
+    save();toast(`Sessão projetada ${idx+1} avançada manualmente.`);render();
     return;
   }
 
