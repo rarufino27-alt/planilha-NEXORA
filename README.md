@@ -82,3 +82,11 @@ Exemplo:
 Ao registrar manualmente uma sessão, o resultado real passa a atualizar o saldo de referência. A próxima sessão recalcula automaticamente:
 
 **novo saldo → 30% de busca → novo lote → novos pontos necessários.**
+
+
+## V1.3 — Escala de lote e sessões integradas
+- Moderado: US$100=0,05; US$150=0,07; US$200=0,10; US$250=0,12; US$300=0,15.
+- Sessão é o contêiner das operações.
+- Operações vinculadas à sessão e resumo automático ao encerrar.
+- Projeção em formato de planilha, com busca percentual dinâmica e sessões restantes.
+- Sessões e operações podem ser editadas depois do registro.
