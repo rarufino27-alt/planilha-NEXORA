@@ -144,11 +144,34 @@ function buildDefaultLotRules(){
 function normalizeLotRules(){
   const defaults=buildDefaultLotRules();
   state.settings.lotMinimum=Number(state.settings.lotMinimum)||0.01;
-  if(!state.settings.lotRules) state.settings.lotRules={};
+  if(!state.settings.lotRules || typeof state.settings.lotRules!=="object")
+    state.settings.lotRules={};
+
   Object.keys(defaults).forEach(profile=>{
-    const existing=Array.isArray(state.settings.lotRules[profile])?state.settings.lotRules[profile]:[];
-    const byBalance=new Map(existing.map(r=>[Number(r.balance),r]));
-    state.settings.lotRules[profile]=defaults[profile].map(r=>byBalance.has(r.balance)?byBalance.get(r):r);
+    const existing=Array.isArray(state.settings.lotRules[profile])
+      ? state.settings.lotRules[profile]
+      : [];
+
+    // Sanitize legacy/corrupted rows before indexing them.
+    const valid=existing.filter(r =>
+      r && Number.isFinite(Number(r.balance)) &&
+      Number(r.balance)>0 &&
+      Number.isFinite(Number(r.lot)) &&
+      Number(r.lot)>=0
+    );
+
+    const byBalance=new Map(
+      valid.map(r=>[Number(r.balance),{
+        balance:Number(r.balance),
+        lot:Number(r.lot)
+      }])
+    );
+
+    state.settings.lotRules[profile]=defaults[profile].map(r =>
+      byBalance.has(r.balance)
+        ? byBalance.get(r.balance)
+        : {balance:Number(r.balance),lot:Number(r.lot)}
+    );
   });
 }
 normalizeLotRules();
@@ -499,7 +522,11 @@ function ensureProjectionState(){
   if(p.secondaryCount===undefined)p.secondaryCount=5;
   if(!p.projectionPercent)p.projectionPercent=p.dailyPercent||30;
   if(!Array.isArray(p.secondaryTargets))p.secondaryTargets=[];
-  p.secondaryTargets=milestoneTargets(p.initialBalance,p.target,p.secondaryCount).map(x=>x.to);
+  p.secondaryTargets=milestoneTargets(
+    Math.max(0,Number(p.initialBalance)||0),
+    Math.max(0,Number(p.target)||0),
+    Math.max(1,Number(p.secondaryCount)||5)
+  ).map(x=>Number(x.to)||0);
   if(!Array.isArray(p.stageDeadlines))p.stageDeadlines=[];
   if(p.stageIndex===undefined)p.stageIndex=0;
   if(!p.projectionRowOverrides||typeof p.projectionRowOverrides!=="object")p.projectionRowOverrides={};

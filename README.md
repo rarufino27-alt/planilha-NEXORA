@@ -249,3 +249,8 @@ Após salvar:
 - Cada etapa informa crescimento percentual, busca diária, lote de referência, pontos de referência e quantidade estimada de sessões para atingir a etapa.
 - A projeção continua sendo recalculada conforme saldo, percentual de busca, ativo e perfil selecionado.
 - A quantidade de sessões/dias não define as metas; ela é apenas uma consequência calculada da projeção.
+
+
+## V2.3.1 — Correção de inicialização
+
+Corrigida a normalização das tabelas de lote para aceitar e limpar registros antigos, vazios ou inválidos antes de acessar `balance` e `lot`. Isso elimina o erro `Cannot read properties of undefined (reading 'balance')` apresentado no console.
