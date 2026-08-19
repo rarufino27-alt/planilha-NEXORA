@@ -254,3 +254,16 @@ Após salvar:
 ## V2.3.1 — Correção de inicialização
 
 Corrigida a normalização das tabelas de lote para aceitar e limpar registros antigos, vazios ou inválidos antes de acessar `balance` e `lot`. Isso elimina o erro `Cannot read properties of undefined (reading 'balance')` apresentado no console.
+
+
+## V2.4 — Redesign da Projeção e Objetivos
+
+- Primeiro dia operacional definido no projeto.
+- Calendário operacional de segunda a sexta, pulando automaticamente fins de semana e dias sem operação registrada.
+- Projeção diária com saldo inicial do dia, busca %, busca US$, resultado WIN/LOSS, lucro/perda, saldo final e crescimento %.
+- Saldo diário real é acumulado pelo resultado líquido do dia; o primeiro dia usa o saldo inicial do projeto.
+- Metas secundárias fixadas em 10 etapas iguais.
+- Removidas as referências de lote e pontos das metas secundárias.
+- Parâmetros da projeção agora incluem gerenciamento operacional, perfil de lote, ativo, busca e primeiro dia.
+- Destaque visual para a projeção do próximo dia, com saldo, busca %, busca US$, lote, pontos de referência e saldo projetado.
+- Novo visual da página mantendo a identidade azul Nexora.

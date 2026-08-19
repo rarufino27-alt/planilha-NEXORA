@@ -516,16 +516,19 @@ function ensureProjectionState(){
   if(!state.projection) state.projection={
     name:"Projeto principal",initialBalance:60,target:1000,dailyPercent:30,
     projectionPercent:30,activeProfile:state.settings.defaultProfile,asset:state.settings.defaultAsset,
-    secondaryCount:5,secondaryTargets:[],stageIndex:0,stageDeadlines:[]
+    operationalManagement:state.settings.defaultOperationalManagement||"Scalping",
+    secondaryCount:10,secondaryTargets:[],stageIndex:0,stageDeadlines:[],firstOperationalDate:todayStr(),createdDate:todayStr()
   };
   const p=state.projection;
-  if(p.secondaryCount===undefined)p.secondaryCount=5;
+  if(p.secondaryCount===undefined||Number(p.secondaryCount)<10)p.secondaryCount=10;
+  if(!p.firstOperationalDate)p.firstOperationalDate=p.createdDate||todayStr();
+  if(!p.createdDate)p.createdDate=p.firstOperationalDate||todayStr();
   if(!p.projectionPercent)p.projectionPercent=p.dailyPercent||30;
   if(!Array.isArray(p.secondaryTargets))p.secondaryTargets=[];
   p.secondaryTargets=milestoneTargets(
     Math.max(0,Number(p.initialBalance)||0),
     Math.max(0,Number(p.target)||0),
-    Math.max(1,Number(p.secondaryCount)||5)
+    Math.max(10,Number(p.secondaryCount)||10)
   ).map(x=>Number(x.to)||0);
   if(!Array.isArray(p.stageDeadlines))p.stageDeadlines=[];
   if(p.stageIndex===undefined)p.stageIndex=0;
@@ -533,36 +536,33 @@ function ensureProjectionState(){
   return p;
 }
 function projectionSession(p,profile,balance){
-  const percent=Number(p.projectionPercent||p.dailyPercent)||30;
+  const management=p.operationalManagement||state.settings.defaultOperationalManagement||"Scalping";
+  const cfg=(state.settings.operationalManagements||{})[management]||{};
+  const percent=Number(p.projectionPercent||p.dailyPercent||cfg.searchPercent)||30;
   const dailyTarget=Number(balance||0)*percent/100;
-  const lot=calcLot(balance,profile||p.activeProfile);
+  const plan=managementLotPlan(balance,management,profile||p.activeProfile);
+  const lot=plan.baseLot;
   const a=state.assets[p.asset]||asset();
   const fees=commission(lot,a);
   const grossRequired=dailyTarget+fees;
   const points=lot>0 ? moneyToPoints(grossRequired,lot,a) : 0;
-  return {dailyTarget,net:dailyTarget,lot,fees,grossRequired,points};
+  return {dailyTarget,net:dailyTarget,lot,fees,grossRequired,points,maxEntries:plan.maxEntries,maxTotalLot:plan.maxTotalLot};
 }
-function milestoneTargets(initial,target,count=5,customTargets=[]){
+function milestoneTargets(initial,target,count=10){
   initial=Number(initial)||0; target=Number(target)||0;
-  count=Math.max(1,Math.floor(Number(count)||5));
+  count=Math.max(10,Math.floor(Number(count)||10));
   if(target<=initial)return [];
-  // Secondary goals are generated automatically by proportional capital growth.
-  // The geometric progression keeps the percentage jump between levels balanced,
-  // rather than producing increasingly difficult equal-dollar jumps.
-  const out=[]; let from=initial;
-  const ratio=Math.pow(target/initial,1/count);
+  const out=[];
+  const step=(target-initial)/count;
   for(let i=0;i<count;i++){
-    let to=(i===count-1)?target:initial*Math.pow(ratio,i+1);
-    to=Number(to.toFixed(2));
-    if(to<=from)to=Number((from+(target-from)/(count-i)).toFixed(2));
-    if(to>target)to=target;
+    const from=Number((initial+step*i).toFixed(2));
+    const to=i===count-1?target:Number((initial+step*(i+1)).toFixed(2));
     out.push({from,to});
-    from=to;
   }
   return out;
 }
 function currentProjectionStage(p,real){
-  const stages=milestoneTargets(p.initialBalance,p.target,p.secondaryCount,p.secondaryTargets);
+  const stages=milestoneTargets(p.initialBalance,p.target,Math.max(10,p.secondaryCount));
   if(!stages.length)return null;
   let idx=Math.max(0,Math.min(Number(p.stageIndex)||0,stages.length-1));
   while(idx<stages.length-1 && real>=stages[idx].to)idx++;
@@ -570,7 +570,27 @@ function currentProjectionStage(p,real){
   return {...stages[idx],index:idx};
 }
 function projectionStages(p){
-  return milestoneTargets(p.initialBalance,p.target,p.secondaryCount,p.secondaryTargets);
+  return milestoneTargets(p.initialBalance,p.target,Math.max(10,p.secondaryCount));
+}
+function nextWeekday(dateStr){
+  const d=new Date(`${dateStr}T12:00:00`);
+  if(Number.isNaN(d.getTime()))return dateStr;
+  while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()+1);
+  return d.toISOString().slice(0,10);
+}
+function addOperationalWeekdays(dateStr,count){
+  const out=[]; let d=new Date(`${dateStr}T12:00:00`);
+  if(Number.isNaN(d.getTime()))return out;
+  while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()+1);
+  while(out.length<count){
+    out.push(d.toISOString().slice(0,10));
+    d.setDate(d.getDate()+1);
+    while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()+1);
+  }
+  return out;
+}
+function firstOperationalDate(p){
+  return nextWeekday(p.firstOperationalDate||p.createdDate||todayStr());
 }
 function operationalSessionNumber(date,id){
   const same=state.sessions.filter(s=>s.date===date).sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
@@ -592,48 +612,59 @@ function operationalDays(){
   return Object.values(days).sort((a,b)=>a.date.localeCompare(b.date)).map(d=>({...d,pct:d.base?d.net/d.base*100:0}));
 }
 function projectSessionRows(p,real,target){
-  const closed=state.sessions.filter(s=>s.status==="closed")
-    .sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
+  const closedByDate={};
+  state.sessions.filter(s=>s.status==="closed").forEach(s=>{
+    if(!closedByDate[s.date])closedByDate[s.date]=[];
+    closedByDate[s.date].push(s);
+  });
+
+  const first=firstOperationalDate(p);
+  const actualDates=Object.keys(closedByDate)
+    .filter(d=>d>=first)
+    .sort();
   const rows=[];
   let runningBalance=projectInitialBalance();
-  let i=0;
-  const maxRows=Math.min(500,Math.max(closed.length+10,20));
 
-  while(runningBalance<target && i<maxRows){
-    const actual=closed[i]||null;
-    // Every real session starts from the cumulative balance produced by:
-    // project initial + capital movements + every previous win/loss.
-    const before=actual?balanceBeforeSession(actual.id):runningBalance;
+  // Every real operational day is preserved. Days without operations are skipped.
+  const dates=[...actualDates];
+  let cursor=actualDates.length?actualDates[actualDates.length-1]:first;
+  const futureDates=addOperationalWeekdays(nextWeekday(cursor),500);
+  futureDates.forEach(d=>{if(!dates.includes(d)&&dates.length<500)dates.push(d);});
+
+  for(let i=0;i<dates.length && runningBalance<target;i++){
+    const date=dates[i];
+    const actualSessions=closedByDate[date]||[];
+    const hasActual=actualSessions.length>0;
+    const before=Number(runningBalance.toFixed(2));
     const plannedPercent=Number(p.projectionPercent||p.dailyPercent)||30;
-    const searchMoney=before*plannedPercent/100;
-    const lot=calcLot(before,p.activeProfile);
-    const a=state.assets[actual?.asset||p.asset]||asset();
-    const fees=commission(lot,a);
-    const grossRequired=searchMoney+fees;
-    const points=lot>0?moneyToPoints(grossRequired,lot,a):0;
-    const stopPoints=Number(actual?.stopPoints??state.settings.dailyStopPoints)||0;
-    const stopMoney=lot>0?pointsToMoney(stopPoints,lot,a):0;
-    const winBalance=Math.min(target,before+searchMoney);
-    const lossBalance=Math.max(0,before-stopMoney);
-    const actualNet=actual?sessionSummary(actual.id).net:null;
-    const actualAfter=actual?Number((before+actualNet).toFixed(2)):null;
-    const realPct=actual&&before?actualNet/before*100:null;
+    const plan=projectionSession(p,p.activeProfile,before);
+    const searchMoney=Number((before*plannedPercent/100).toFixed(2));
+    const lot=plan.lot;
+    const fees=plan.fees;
+    const grossRequired=plan.grossRequired;
+    const points=plan.points;
+    const actualNet=hasActual
+      ?Number(actualSessions.reduce((sum,s)=>sum+sessionSummary(s.id).net,0).toFixed(2))
+      :null;
+    const actualAfter=hasActual?Number((before+actualNet).toFixed(2)):null;
+    const realPct=hasActual&&before?actualNet/before*100:null;
+    const sessionCount=hasActual?actualSessions.length:1;
+    const winBalance=Math.min(target,Number((before+searchMoney).toFixed(2)));
+    const lossBalance=Math.max(0,Number((before-searchMoney).toFixed(2)));
 
-    let status=actual?"CONCLUÍDA":(i===closed.length?"PRÓXIMA":"PROJETADA");
+    let status=hasActual?"CONCLUÍDA":(i===actualDates.length?"PRÓXIMA":"PROJETADA");
     if(p.projectionRowOverrides[String(i)]==="ADVANCED")status="AVANÇADA";
 
     rows.push({
-      n:i+1,before,percent:plannedPercent,realPct,goal:searchMoney,real:actualNet,
-      lot,points,fees,grossRequired,winBalance,lossBalance,actualAfter,status,sessionId:actual?.id||null
+      n:i+1,date,before,percent:plannedPercent,realPct,goal:searchMoney,real:actualNet,
+      lot,points,fees,grossRequired,winBalance,lossBalance,actualAfter,status,
+      sessionCount,sessionIds:actualSessions.map(s=>s.id)
     });
 
-    runningBalance=actual?actualAfter:winBalance;
-    if(runningBalance>=target)break;
-    i++;
+    runningBalance=hasActual?actualAfter:winBalance;
   }
   return rows;
 }
-
 function renderProjection(){
   rebuildCurrentBalance();
   const p=ensureProjectionState();
@@ -645,90 +676,102 @@ function renderProjection(){
   const remaining=projectSessionsToTarget(p,p.activeProfile,real,stageTarget);
   const rows=projectSessionRows(p,real,target);
   const projectionPct=Number(p.projectionPercent||p.dailyPercent)||30;
-  const nextStageIndex=stage?stage.index+1:null;
+  const nextDate=rows.find(r=>r.status==="PRÓXIMA"||r.status==="PROJETADA")?.date||firstOperationalDate(p);
+  const nextPlan=projectionSession(p,p.activeProfile,real);
+  const growth=initial?((real-initial)/initial*100):0;
+  const currentStage=stage?stage.index+1:(real>=target?stages.length:1);
 
   document.getElementById("view-projection").innerHTML=`
-    <div class="grid grid-4">
-      ${cardMetric("Meta principal",money(target),"objetivo final")}
-      ${cardMetric("Saldo inicial",money(initial),"início do projeto")}
-      ${cardMetric("Saldo atual",money(real),real>=target?"META CONCLUÍDA":stage?`etapa ${stage.index+1} · até ${money(stageTarget)}`:"")}
-      ${cardMetric("Busca projetada",num(projectionPct,1)+"%",`US$ ${money(real*projectionPct/100)}`)}
+    <div class="projection-hero">
+      <div class="hero-title"><span class="kicker">PROJEÇÃO E OBJETIVOS</span><h1>Plano de crescimento operacional</h1>
+        <div class="hero-meta"><span>Saldo inicial <strong>${money(initial)}</strong></span><span>Meta principal <strong>${money(target)}</strong></span><span>1º dia <strong>${firstOperationalDate(p)}</strong></span></div>
+      </div>
+      <div class="hero-next"><span class="kicker">PRÓXIMA OPERAÇÃO</span><strong>${nextDate}</strong><span>${num(projectionPct,1)}% de busca planejada</span></div>
     </div>
 
-    <div class="card section-space">
-      <div class="card-header"><div><h2>Parâmetros da projeção</h2><p>A projeção operacional é recalculada depois que você define a busca diária e o perfil de lote.</p></div></div>
+    <div class="projection-summary grid grid-4">
+      ${cardMetric("Saldo atual",money(real),"saldo da corretora",real>=initial?"positive":"negative")}
+      ${cardMetric("Crescimento",pct(growth),"sobre o saldo inicial",growth>=0?"positive":"negative")}
+      ${cardMetric("Meta principal",money(target),real>=target?"CONCLUÍDA":`etapa ${currentStage} de ${stages.length}`)}
+      ${cardMetric("Etapa atual",`${currentStage}/${stages.length}`,"progresso do projeto")}
+    </div>
+
+    <div class="card section-space projection-parameters">
+      <div class="card-header"><div><h2>Parâmetros da projeção</h2><p>Qualquer alteração abaixo recalcula automaticamente os quadrantes desta página.</p></div><span class="pill blue">motor integrado</span></div>
       <form id="projection-controls" class="form-grid four">
-        <div class="field"><label>Busca diária para projeção (%)</label><input name="projectionPercent" type="number" min="0.1" step="0.1" value="${projectionPct}" required></div>
-        <div class="field"><label>Perfil / lote operacional</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===p.activeProfile?'selected':''}>${esc(x)}</option>`).join("")}</select></div>
-        <div class="field"><label>Ativo da projeção</label><select name="asset">${Object.values(state.assets).map(a=>`<option ${a.symbol===p.asset?'selected':''}>${esc(a.symbol)}</option>`).join("")}</select></div>
-        <div class="field"><label>Metas secundárias automáticas</label><input type="text" value="${p.secondaryCount} níveis proporcionais" readonly></div>
-        <div class="actions full"><button class="btn primary">Atualizar projeção</button></div>
+        <div class="field"><label>Gerenciamento operacional</label><select name="operationalManagement">${Object.keys(state.settings.operationalManagements||{}).map(x=>`<option ${x===(p.operationalManagement||"Scalping")?'selected':''}>${esc(x)}</option>`).join("")}</select></div>
+        <div class="field"><label>Busca diária (%)</label><input name="projectionPercent" type="number" min="0.1" step="0.1" value="${projectionPct}" required></div>
+        <div class="field"><label>Perfil de lote</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===p.activeProfile?'selected':''}>${esc(x)}</option>`).join("")}</select></div>
+        <div class="field"><label>Ativo</label><select name="asset">${Object.values(state.assets).map(a=>`<option ${a.symbol===p.asset?'selected':''}>${esc(a.symbol)}</option>`).join("")}</select></div>
+        <div class="field"><label>1º dia operacional</label><input name="firstOperationalDate" type="date" value="${p.firstOperationalDate||todayStr()}" required></div>
+        <div class="actions full"><button class="btn primary">Recalcular projeção</button></div>
       </form>
     </div>
 
+    <div class="card section-space next-day-card">
+      <div class="card-header"><div><span class="kicker">DESTAQUE OPERACIONAL</span><h2>Projeção para o dia ${nextDate}</h2><p>Calculada sobre o saldo atualizado e os parâmetros selecionados.</p></div><span class="pill green">PROJEÇÃO DO DIA</span></div>
+      <div class="next-day-grid">
+        <div><span class="kicker">Saldo de partida</span><strong>${money(real)}</strong></div>
+        <div><span class="kicker">Busca</span><strong>${num(projectionPct,1)}% · ${money(nextPlan.dailyTarget)}</strong></div>
+        <div><span class="kicker">Lote a utilizar</span><strong>${num(nextPlan.lot,2)}</strong></div>
+        <div><span class="kicker">Crescimento esperado</span><strong>+${pct(projectionPct)}</strong></div>
+        <div><span class="kicker">Saldo projetado</span><strong>${money(Math.min(target,real+nextPlan.dailyTarget))}</strong></div>
+        <div><span class="kicker">Pontos de referência</span><strong>${num(nextPlan.points,0)} pts</strong></div>
+      </div>
+    </div>
+
     <div class="card section-space">
-      <div class="card-header"><div><h2>Metas secundárias automáticas</h2><p>Os níveis são calculados proporcionalmente entre o saldo inicial e a meta principal. Não é necessário informar valores manualmente.</p></div><span class="pill green">${stages.length} etapas</span></div>
-      ${stages.length?`<div class="table-wrap"><table><thead><tr><th>Etapa</th><th>De</th><th>Objetivo US$</th><th>Crescimento</th><th>Busca %</th><th>Lote ref.</th><th>Pontos ref.</th><th>Sessões estimadas</th><th>Status</th></tr></thead><tbody>
+      <div class="card-header"><div><h2>Metas secundárias</h2><p>10 etapas divididas igualmente entre o saldo inicial e a meta principal.</p></div><span class="pill blue">${stages.length} etapas</span></div>
+      ${stages.length?`<div class="table-wrap"><table><thead><tr><th>Etapa</th><th>Saldo inicial</th><th>Meta da etapa</th><th>Crescimento</th><th>Sessões estimadas</th><th>Status</th><th>Ação</th></tr></thead><tbody>
       ${stages.map((m,i)=>{
-        const x=projectionSession(p,p.activeProfile,m.from);
         const estimated=projectSessionsToTarget(p,p.activeProfile,m.from,m.to);
-        const deadline=p.stageDeadlines[i]??(estimated===null?0:estimated);
-        const done=real>=m.to;
-        const current=stage&&stage.index===i;
-        const manualAdvanced=i<(Number(p.stageIndex)||0);
-        const status=done?"CONCLUÍDA":manualAdvanced?"AVANÇADA":current?"ATUAL":"PRÓXIMA";
-        return `<tr>
-          <td>${i+1}</td><td>${money(m.from)}</td><td><strong>${money(m.to)}</strong></td>
-          <td>${num(m.from?((m.to-m.from)/m.from*100):0,1)}%</td><td>${num(projectionPct,1)}%</td><td>${num(x.lot,2)}</td><td>${num(x.points,0)}</td>
-          <td>${estimated===null?"—":estimated}</td>
-          <td><span class="pill ${status==="CONCLUÍDA"||status==="AVANÇADA"?"green":current?"amber":""}">${status}</span></td>
-          <td>${current&&i<stages.length-1?`<button class="btn primary" data-advance-stage="${i}">Avançar etapa</button>`:"—"}</td>
-        </tr>`;
+        const done=real>=m.to,current=stage&&stage.index===i,advanced=i<(Number(p.stageIndex)||0);
+        const status=done?"CONCLUÍDA":advanced?"AVANÇADA":current?"ATUAL":"PRÓXIMA";
+        return `<tr><td>${i+1}</td><td>${money(m.from)}</td><td><strong>${money(m.to)}</strong></td><td>${num(m.from?((m.to-m.from)/m.from*100):0,1)}%</td><td>${estimated===null?"—":estimated}</td><td><span class="pill ${status==="CONCLUÍDA"||status==="AVANÇADA"?"green":current?"amber":""}">${status}</span></td><td>${current&&i<stages.length-1?`<button class="btn primary" data-advance-stage="${i}">Avançar</button>`:"—"}</td></tr>`;
       }).join("")}</tbody></table></div>`:`<div class="empty">Defina uma meta principal maior que o saldo inicial.</div>`}
     </div>
 
     <div class="card section-space">
-      <div class="card-header"><div><h2>Projeção operacional até a meta principal</h2><p>O trajeto é recalculado a cada sessão real. A busca em US$ é líquida; os pontos necessários incluem a comissão configurada do ativo.</p></div></div>
+      <div class="card-header"><div><h2>Projeção operacional até a meta principal</h2><p>Os dias seguem de segunda a sexta, a partir do primeiro dia operacional definido. Fins de semana são pulados automaticamente.</p></div><span class="pill blue">trajeto completo</span></div>
       <div class="table-wrap"><table><thead><tr>
-        <th>Sessão</th><th>Saldo inicial do dia</th><th>% Busca</th><th>% Real</th><th>$ Busca</th><th>$ Real</th>
-        <th>Saldo se Win</th><th>Saldo se Loss</th><th>Saldo real</th><th>Status</th>
+        <th>Data da operação</th><th>Sessão</th><th>Saldo</th><th>Busca diária %</th><th>Busca diária US$</th><th>Resultado do dia</th><th>Lucro/perda</th><th>Saldo final</th><th>%</th><th>Status</th>
       </tr></thead><tbody>
       ${rows.map(r=>{
         const actual=r.real!==null;
-        const isWin=actual&&r.real>0, isLoss=actual&&r.real<0;
-        const winCell=actual?(isWin?money(r.actualAfter):"—"):money(r.winBalance);
-        const lossCell=actual?(isLoss?money(r.actualAfter):"—"):money(r.lossBalance);
-        return `<tr>
-        <td>${r.n}</td>
-        <td>${money(r.before)}</td>
-        <td>${num(r.percent,1)}%</td>
-        <td class="${r.realPct===null?'':r.realPct>=0?'positive':'negative'}">${r.realPct===null?'—':pct(r.realPct)}</td>
-        <td>${money(r.goal)}</td>
-        <td class="${r.real===null?'':r.real>=0?'positive':'negative'}">${r.real===null?'—':money(r.real)}</td>
-        <td>${winCell}</td>
-        <td>${lossCell}</td>
-        <td class="${r.actualAfter===null?'':r.actualAfter>=r.before?'positive':'negative'}">${r.actualAfter===null?'—':money(r.actualAfter)}</td>
-        <td><span class="pill ${r.status==="CONCLUÍDA"||r.status==="AVANÇADA"?"green":r.status==="PRÓXIMA"?"amber":""}">${r.status}</span>
-        ${r.status!=="CONCLUÍDA"&&r.status!=="AVANÇADA"?`<button class="btn secondary" data-advance-projection-row="${r.n-1}">Avançar</button>`:""}</td>
-      </tr>`;
+        const outcome=actual?(r.real>0?"WIN":r.real<0?"LOSS":"WIN"):"—";
+        const cls=outcome==="WIN"?"positive":outcome==="LOSS"?"negative":"";
+        const final=actual?r.actualAfter:null;
+        return `<tr class="${r.status==="PRÓXIMA"?"projection-today":""}">
+          <td><strong>${r.date}</strong></td>
+          <td>${r.sessionCount}</td>
+          <td>${money(r.before)}</td>
+          <td>${num(r.percent,1)}%</td>
+          <td>${money(r.goal)}</td>
+          <td class="${cls}"><strong>${outcome}</strong></td>
+          <td class="${cls}">${actual?money(r.real):"—"}</td>
+          <td class="${cls}">${final===null?"—":money(final)}</td>
+          <td class="${cls}">${actual?pct(r.realPct):"—"}</td>
+          <td><span class="pill ${r.status==="CONCLUÍDA"||r.status==="AVANÇADA"?"green":r.status==="PRÓXIMA"?"amber":""}">${r.status}</span>
+          ${r.status!=="CONCLUÍDA"&&r.status!=="AVANÇADA"?` <button class="btn secondary" data-advance-projection-row="${r.n-1}">Avançar</button>`:""}
+          </td>
+        </tr>`;
       }).join("")}
       </tbody></table></div>
     </div>
 
-    <div class="callout section-space"><strong>Etapa atual</strong><span class="note">${stage?`Etapa ${stage.index+1}: ${money(stage.from)} → ${money(stage.to)} · aproximadamente ${remaining===null?"—":remaining+" sessões"} restantes.`:"A meta principal foi alcançada ou não há etapa ativa."}</span></div>
-
-    <div class="callout section-space"><strong>Edição administrativa</strong><span class="note">Meta principal, saldo inicial e demais parâmetros estruturais continuam em Configurações → Projeto.</span></div>`;
+    <div class="callout section-space"><strong>Etapa atual</strong><span class="note">${stage?`Etapa ${stage.index+1}: ${money(stage.from)} → ${money(stage.to)} · aproximadamente ${remaining===null?"—":remaining+" sessões"} restantes.`:"A meta principal foi alcançada."}</span></div>`;
 
   const form=document.getElementById("projection-controls");
   if(form)form.onsubmit=e=>{
     e.preventDefault();const d=new FormData(form);
-    const count=5;
-    p.projectionPercent=Math.max(0.1,Number(d.get("projectionPercent"))||30);
+    p.operationalManagement=d.get("operationalManagement")||state.settings.defaultOperationalManagement||"Scalping";
+    const mgCfg=(state.settings.operationalManagements||{})[p.operationalManagement]||{};
+    p.projectionPercent=Math.max(0.1,Number(d.get("projectionPercent"))||Number(mgCfg.searchPercent)||30);
     p.dailyPercent=p.projectionPercent;
-    p.activeProfile=d.get("profile");p.asset=d.get("asset");p.secondaryCount=count;
-    if(p.stageIndex>=count)p.stageIndex=count-1;
-    // Always regenerate the secondary goals from the current project parameters.
-    p.secondaryTargets=milestoneTargets(p.initialBalance,p.target,count).map(x=>x.to);
+    p.activeProfile=d.get("profile");p.asset=d.get("asset");
+    p.firstOperationalDate=nextWeekday(d.get("firstOperationalDate")||todayStr());
+    p.secondaryCount=Math.max(10,Number(p.secondaryCount)||10);
+    p.secondaryTargets=milestoneTargets(p.initialBalance,p.target,p.secondaryCount).map(x=>x.to);
     save();toast("Projeção recalculada.");render();
   };
 }
@@ -984,7 +1027,9 @@ function renderSettingsTab(tab){
             <div class="field"><label>Saldo inicial do projeto (US$)</label><input name="initial" type="number" step="0.01" value="${p.initialBalance}"></div>
             <div class="field"><label>Meta principal (US$)</label><input name="target" type="number" step="0.01" value="${p.target}"></div>
             <div class="field"><label>Busca padrão da projeção (%)</label><input name="dailyPercent" type="number" min="0.1" step="0.1" value="${p.projectionPercent||p.dailyPercent}"></div>
-            <div class="field"><label>Metas secundárias</label><input name="secondaryCount" type="number" min="1" max="50" value="${p.secondaryCount}"></div>
+            <div class="field"><label>1º dia operacional</label><input name="firstOperationalDate" type="date" value="${p.firstOperationalDate||todayStr()}"></div>
+            <div class="field"><label>Gerenciamento operacional</label><select name="operationalManagement">${Object.keys(state.settings.operationalManagements||{}).map(x=>`<option ${x===(p.operationalManagement||"Scalping")?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+            <div class="field"><label>Metas secundárias</label><input type="text" value="10 etapas automáticas" readonly></div>
             <div class="field"><label>Perfil do projeto</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===p.activeProfile?'selected':''}>${esc(x)}</option>`).join("")}</select></div>
             <div class="field"><label>Ativo principal</label><select name="asset">${Object.values(state.assets).map(a=>`<option ${a.symbol===p.asset?'selected':''}>${esc(a.symbol)}</option>`).join("")}</select></div>
             <div class="actions full"><button class="btn primary" type="submit">Salvar projeto</button></div>
@@ -1085,20 +1130,27 @@ function bindSettingsTab(tab){
     if(f)f.onsubmit=e=>{
       e.preventDefault();
       const d=new FormData(f), p=ensureProjectionState();
-      const count=Math.max(1,Math.min(50,Number(d.get("secondaryCount"))||5));
+      const count=10;
       const target=Math.max(0,Number(d.get("target"))||0);
       const initial=Math.max(0,Number(d.get("initial"))||0);
+      const firstOperationalDate=nextWeekday(d.get("firstOperationalDate")||todayStr());
+      const management=d.get("operationalManagement")||state.settings.defaultOperationalManagement||"Scalping";
+      const mgCfg=(state.settings.operationalManagements||{})[management]||{};
+      const selectedPercent=Math.max(0.1,Number(d.get("dailyPercent"))||Number(mgCfg.searchPercent)||30);
       state.projection={
         ...p,
         name:(d.get("name")||"Projeto principal").trim(),
         initialBalance:initial,
         target,
-        dailyPercent:Math.max(0.1,Number(d.get("dailyPercent"))||30),
-        projectionPercent:Math.max(0.1,Number(d.get("dailyPercent"))||30),
+        dailyPercent:selectedPercent,
+        projectionPercent:selectedPercent,
         secondaryCount:count,
         activeProfile:d.get("profile"),
+        operationalManagement:management,
         asset:d.get("asset"),
-        secondaryTargets:milestoneTargets(initial,target,count,p.secondaryTargets).map(x=>x.to),
+        firstOperationalDate,
+        createdDate:p.createdDate||firstOperationalDate,
+        secondaryTargets:milestoneTargets(initial,target,count).map(x=>x.to),
         stageDeadlines:Array.from({length:count},(_,i)=>p.stageDeadlines?.[i]||0),
         stageIndex:Math.min(Number(p.stageIndex)||0,count-1),
         projectionRowOverrides:p.projectionRowOverrides||{}
@@ -1122,8 +1174,10 @@ function bindSettingsTab(tab){
         name:"Novo projeto",initialBalance:initial,target,
         dailyPercent:Number(state.settings.minDailySearchPercent??20)||20,
         projectionPercent:Number(state.settings.minDailySearchPercent??20)||20,
-        secondaryCount:5,secondaryTargets:[],stageDeadlines:[],stageIndex:0,
-        activeProfile:profile,asset:assetKey,mode:"compound",status:"active",
+        secondaryCount:10,secondaryTargets:[],stageDeadlines:[],stageIndex:0,
+        activeProfile:profile,operationalManagement:state.settings.defaultOperationalManagement||"Scalping",
+        asset:assetKey,mode:"compound",status:"active",
+        firstOperationalDate:nextWeekday(todayStr()),createdDate:todayStr(),
         startedAt:todayStr(),completedAt:"",projectionRowOverrides:{}
       };
       state.sessions=[];state.operations=[];state.journalEntries=[];state.activeSessionId=null;state.capitalMovements=[];
@@ -1136,8 +1190,9 @@ function bindSettingsTab(tab){
       if(!confirm("Excluir o projeto atual e TODOS os registros operacionais deste projeto? Esta ação é local e não pode ser desfeita sem backup."))return;
       state.projection={
         name:"Projeto principal",initialBalance:0,target:0,dailyPercent:20,projectionPercent:20,
-        secondaryCount:5,secondaryTargets:[],stageDeadlines:[],stageIndex:0,
+        secondaryCount:10,secondaryTargets:[],stageDeadlines:[],stageIndex:0,
         activeProfile:state.settings.defaultProfile||"Moderado 1",
+        operationalManagement:state.settings.defaultOperationalManagement||"Scalping",
         asset:state.settings.defaultAsset||Object.keys(state.assets)[0],
         mode:"compound",status:"active",projectionRowOverrides:{}
       };

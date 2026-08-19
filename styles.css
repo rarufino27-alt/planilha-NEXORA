@@ -179,3 +179,23 @@ tr:last-child td{border-bottom:0}
 .nested-card{padding:16px;background:#fbfdff;border:1px solid var(--line);box-shadow:none}
 .grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(max-width:1200px){.grid-3{grid-template-columns:1fr}}
+
+/* Nexora V2.4 — Projection redesign */
+.projection-hero{display:flex;justify-content:space-between;gap:24px;align-items:stretch;padding:28px;border-radius:18px;background:linear-gradient(135deg,#06183f,#0b55c7);color:#fff;box-shadow:0 14px 36px rgba(5,45,110,.18)}
+.projection-hero h1{margin:5px 0 14px;font-size:30px;letter-spacing:-.5px}
+.projection-hero .kicker{color:#9ec8ff;font-weight:700;letter-spacing:1.2px}
+.hero-meta{display:flex;flex-wrap:wrap;gap:10px}
+.hero-meta span{padding:8px 12px;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:rgba(255,255,255,.08);font-size:13px}
+.hero-meta strong{margin-left:4px}
+.hero-next{min-width:230px;padding:18px;border-radius:15px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);display:flex;flex-direction:column;justify-content:center}
+.hero-next strong{font-size:24px;margin:5px 0}
+.projection-summary{margin-top:18px}
+.projection-parameters{border-top:3px solid #1677ff}
+.next-day-card{border:1px solid rgba(22,119,255,.25);background:linear-gradient(135deg,#f5faff,#fff);box-shadow:0 10px 28px rgba(22,119,255,.09)}
+.next-day-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.next-day-grid>div{padding:16px;border-radius:12px;background:#fff;border:1px solid var(--line)}
+.next-day-grid .kicker{display:block;margin-bottom:6px}
+.next-day-grid strong{font-size:18px}
+.projection-today{box-shadow:inset 4px 0 0 #1677ff;background:rgba(22,119,255,.035)}
+@media(max-width:1100px){.next-day-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.projection-hero{flex-direction:column}.hero-next{min-width:0}}
+@media(max-width:650px){.next-day-grid{grid-template-columns:1fr 1fr}.projection-hero h1{font-size:24px}}
