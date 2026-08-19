@@ -340,7 +340,8 @@ function renderDashboard(){
   rebuildCurrentBalance();
   const s=sessionTotals(), o=overall(), bal=Number(state.settings.currentBalance)||0;
   const profile=state.settings.defaultProfile, sug=lotSuggestion(bal,profile);
-  const plan=dailyOperationalPlan(bal,profile,state.settings.defaultAsset,state.settings.minDailySearchPercent??20);
+  const dashboardMgmt=state.settings.defaultOperationalManagement||"Scalping";
+  const dashboardPlan=tradePlan(bal,dashboardMgmt,profile,state.settings.defaultAsset,state.settings.minDailySearchPercent??20);
   const initial=projectInitialBalance();
   const generalPct=initial?(bal-initial)/initial*100:0;
   const closed=[...state.sessions].filter(x=>x.status==="closed").sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
@@ -353,13 +354,13 @@ function renderDashboard(){
       ${cardMetric("Performance geral",pct(generalPct),"saldo atual × capital inicial",generalPct>=0?"positive":"negative")}
       ${cardMetric("Win rate",pct(o.winRate),`${o.wins} wins / ${o.losses} losses`)}
     </div>
-    ${openPlan?`<div class="card section-space"><div class="card-header"><div><h2>Plano da operação</h2><p>${esc(openMgmt)}</p></div></div><div class="stat-strip">
-      <div><span class="kicker">Lote base</span><div class="v">${num(openPlan.baseLot,2)}</div></div>
-      <div><span class="kicker">Máx. entradas</span><div class="v">${openPlan.maxEntries}</div></div>
-      <div><span class="kicker">Exposição máxima</span><div class="v">${num(openPlan.maxTotalLot,2)}</div></div>
-      <div><span class="kicker">Espaçamento</span><div class="v">${num(openPlan.entrySpacingPoints,0)} pts</div></div>
-      <div><span class="kicker">Meta líquida</span><div class="v">${money(openPlan.netTarget)}</div></div>
-    </div></div>`:""}
+    <div class="card section-space"><div class="card-header"><div><h2>Plano operacional do dia</h2><p>${esc(dashboardMgmt)} · ${esc(state.settings.defaultAsset)}</p></div></div><div class="stat-strip">
+      <div><span class="kicker">Lote base</span><div class="v">${num(dashboardPlan.baseLot,2)}</div></div>
+      <div><span class="kicker">Máx. entradas</span><div class="v">${dashboardPlan.maxEntries}</div></div>
+      <div><span class="kicker">Exposição máxima</span><div class="v">${num(dashboardPlan.maxTotalLot,2)}</div></div>
+      <div><span class="kicker">Espaçamento</span><div class="v">${num(dashboardPlan.entrySpacingPoints,0)} pts</div></div>
+      <div><span class="kicker">Meta líquida</span><div class="v">${money(dashboardPlan.netTarget)}</div></div>
+    </div></div>
     <div class="grid grid-2 section-space">
       <div class="card">
         <div class="card-header"><div><h2>Gerenciamento atual</h2><p>${esc(profile)} · ${esc(state.settings.defaultAsset)}</p></div></div>
@@ -416,7 +417,7 @@ function renderSession(){
   const profile=state.settings.defaultProfile;
   const opMgmt=active?.operationalManagement||state.settings.defaultOperationalManagement||"Scalping";
   const mgCfg=(state.settings.operationalManagements||{})[opMgmt]||{};
-  const sessionPlan=tradePlan(bal,opMgmt,active?.profile||profile,active?.asset||defaultAsset,active?.searchPercent??mgCfg.searchPercent??state.settings.minDailySearchPercent??20);
+  const sessionPlan=tradePlan(active?Number(active.balanceBefore)||bal:bal,opMgmt,active?.profile||profile,active?.asset||defaultAsset,active?.searchPercent??mgCfg.searchPercent??state.settings.minDailySearchPercent??20);
   document.getElementById("view-session").innerHTML=`
     <div class="grid grid-2">
       <div class="card">
@@ -1317,7 +1318,8 @@ function renderOperations(){
           <div class="field"><label>Horário</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" ${disabled?"disabled":""} required></div>
           <div class="field"><label>Ativo</label><select name="asset" ${disabled?"disabled":""}>${Object.values(state.assets).map(x=>`<option ${x.symbol===(open?.asset||state.settings.defaultAsset)?"selected":""}>${x.symbol}</option>`).join("")}</select></div>
           <div class="field"><label>Direção</label><select name="direction" ${disabled?"disabled":""}><option value="1">BUY</option><option value="-1">SELL</option></select></div>
-          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,2)}" ${disabled?"disabled":""}></div>
+          <div class="field"><label>Nº da entrada</label><input type="number" min="1" name="entryNumber" value="${open?((state.operations.filter(o=>o.sessionId===open.id).length)+1):1}" ${disabled?"disabled":""}></div>
+          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(openPlan?.baseLot??lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,2)}" ${disabled?"disabled":""}></div>
           <div class="field"><label>Pontos Nexora</label><input type="number" step="1" name="points" ${disabled?"disabled":""} required></div>
           <div class="field"><label>Resultado líquido MT5 (US$)</label><input type="number" step="0.01" name="net" ${disabled?"disabled":""} required></div>
           <div class="field"><label>Comissão (US$)</label><input type="number" step="0.01" name="commission" ${disabled?"disabled":""}></div>

@@ -207,3 +207,11 @@ Camada comum para todas as modalidades:
 O Scalping foi configurado inicialmente com modelo por capital:
 US$10 → 0,01 lote, com até 3 entradas e exposição máxima de 0,03 lote.
 Os valores são editáveis em Configurações → Gerenciamentos.
+
+
+## V2.1.1 — Correção de runtime
+
+- Corrigida referência de variáveis do plano de operação que estava sendo usada no Dashboard fora do escopo.
+- Dashboard agora usa seu próprio plano operacional calculado.
+- Sessão ativa calcula o plano usando o saldo inicial real daquela sessão.
+- Lançamento rápido usa o mesmo lote-base planejado e numeração de entrada do gerenciamento ativo.
