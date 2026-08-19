@@ -267,3 +267,14 @@ Corrigida a normalização das tabelas de lote para aceitar e limpar registros a
 - Parâmetros da projeção agora incluem gerenciamento operacional, perfil de lote, ativo, busca e primeiro dia.
 - Destaque visual para a projeção do próximo dia, com saldo, busca %, busca US$, lote, pontos de referência e saldo projetado.
 - Novo visual da página mantendo a identidade azul Nexora.
+
+
+## V2.5 — Dashboard + Sessão Operacional
+
+- Dashboard redesenhado com saldo, operações, objetivo geral e diário, crescimento, win/loss, gráfico mensal completo e visão anual.
+- Ticker de mercado no topo com dados públicos de S&P 500, Nasdaq, Dow Jones, FTSE, Nikkei, ouro, petróleo, USD/BRL e referência cambial.
+- Nenhum dado de Investing.com é utilizado.
+- Sessão Operacional passa a captar diretamente da projeção: perfil financeiro, busca %, busca US$, lote de entrada e pontos de referência.
+- Removidos da visualização da Sessão Operacional: máximo de entradas, exposição máxima e pontos de stop.
+- Configurações receberam padronização visual e o gerenciamento operacional voltou a ter binding funcional para salvar os parâmetros.
+- Perfis financeiros agora também aceitam saldos a partir de US$10 na sugestão automática.

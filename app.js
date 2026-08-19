@@ -212,7 +212,7 @@ function calcLot(balance, profile){
   normalizeLotRules();
 
   const rules=state.settings.lotRules[profile]||[];
-  if(b<100) return 0; // abaixo do primeiro nível: sem sugestão automática
+  if(b<10) return 0; // abaixo do primeiro nível: sem sugestão automática
 
   let selected=null;
   for(const row of rules){
@@ -228,7 +228,7 @@ function calcLot(balance, profile){
 }
 function lotSuggestion(balance,profile){
   const b=Number(balance)||0;
-  if(b<100) return {lot:0,warning:"Capital abaixo do primeiro nível de gerenciamento (US$100)."};
+  if(b<10) return {lot:0,warning:"Capital abaixo do primeiro nível de gerenciamento (US$10)."};
   return {lot:calcLot(b,profile),warning:""};
 }
 function pointsToMoney(points, lot, a=asset()){
@@ -366,61 +366,167 @@ function cardMetric(label,value,sub="",cls=""){
 function renderDashboard(){
   rebuildCurrentBalance();
   const s=sessionTotals(), o=overall(), bal=Number(state.settings.currentBalance)||0;
-  const profile=state.settings.defaultProfile, sug=lotSuggestion(bal,profile);
-  const dashboardMgmt=state.settings.defaultOperationalManagement||"Scalping";
-  const dashboardPlan=tradePlan(bal,dashboardMgmt,profile,state.settings.defaultAsset,state.settings.minDailySearchPercent??20);
   const initial=projectInitialBalance();
+  const p=ensureProjectionState();
+  const profile=state.settings.defaultProfile||p.activeProfile||"Moderado 1";
+  const mg=state.settings.defaultOperationalManagement||p.operationalManagement||"Scalping";
+  const percent=Number(state.settings.minDailySearchPercent??p.projectionPercent??20)||20;
+  const assetSymbol=state.settings.defaultAsset||p.asset||Object.keys(state.assets)[0];
+  const plan=tradePlan(bal,mg,profile,assetSymbol,percent);
   const generalPct=initial?(bal-initial)/initial*100:0;
-  const closed=[...state.sessions].filter(x=>x.status==="closed").sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""));
+  const operations=state.operations||[];
+  const closed=[...state.sessions].filter(x=>x.status==="closed");
+  const wins=operations.filter(x=>(Number(x.net)||0)>0).length;
+  const losses=operations.filter(x=>(Number(x.net)||0)<0).length;
+  const totalDecisions=wins+losses;
+  const winRate=totalDecisions?wins/totalDecisions*100:0;
+  const lossRate=totalDecisions?losses/totalDecisions*100:0;
   const days=operationalDays();
+  const year=new Date().getFullYear();
+  const yearOps=operations.filter(o=>String(o.date||"").startsWith(String(year)));
+  const yearNet=yearOps.reduce((a,o)=>a+(Number(o.net)||0),0);
+  const yearWins=yearOps.filter(o=>(Number(o.net)||0)>0).length;
+  const yearLosses=yearOps.filter(o=>(Number(o.net)||0)<0).length;
+  const yearRate=(yearWins+yearLosses)?yearWins/(yearWins+yearLosses)*100:0;
+  const month=new Date().getMonth()+1;
+  const monthDays=buildMonthlyDailyPerformance(year,month);
+  const daySearch=bal*percent/100;
+  const projectedAfter=Math.min(Number(p.target)||Infinity,bal+daySearch);
+
   document.getElementById("view-dashboard").innerHTML=`
-    <div class="grid grid-4">
-      ${cardMetric("Saldo atual",money(bal),`Inicial do projeto ${money(initial)}`)}
-      ${cardMetric("Resultado hoje",money(s.net),`${num(s.points,0)} pontos`,s.net>=0?"positive":"negative")}
-      ${cardMetric("Resultado acumulado",money(bal-initial),`Lucros e perdas desde o início`,(bal-initial)>=0?"positive":"negative")}
-      ${cardMetric("Performance geral",pct(generalPct),"saldo atual × capital inicial",generalPct>=0?"positive":"negative")}
-      ${cardMetric("Win rate",pct(o.winRate),`${o.wins} wins / ${o.losses} losses`)}
+    <div class="market-ticker" id="market-ticker">
+      <div class="market-live"><span class="live-dot"></span><strong>MERCADOS EM TEMPO REAL</strong><small>Fontes públicas · dados de mercado</small></div>
+      <div class="ticker-items"><span>Carregando mercados...</span></div>
     </div>
-    <div class="card section-space"><div class="card-header"><div><h2>Plano operacional do dia</h2><p>${esc(dashboardMgmt)} · ${esc(state.settings.defaultAsset)}</p></div></div><div class="stat-strip">
-      <div><span class="kicker">Lote base</span><div class="v">${num(dashboardPlan.baseLot,2)}</div></div>
-      <div><span class="kicker">Máx. entradas</span><div class="v">${dashboardPlan.maxEntries}</div></div>
-      <div><span class="kicker">Exposição máxima</span><div class="v">${num(dashboardPlan.maxTotalLot,2)}</div></div>
-      <div><span class="kicker">Espaçamento</span><div class="v">${num(dashboardPlan.entrySpacingPoints,0)} pts</div></div>
-      <div><span class="kicker">Meta líquida</span><div class="v">${money(dashboardPlan.netTarget)}</div></div>
-    </div></div>
+
+    <div class="dashboard-hero">
+      <div><span class="kicker">NEXORA · GERENCIAMENTO OPERACIONAL</span><h1>Dashboard</h1>
+      <p>Acompanhamento real do capital, desempenho operacional e objetivo do projeto.</p></div>
+      <div class="hero-balance"><span>Saldo atual</span><strong>${money(bal)}</strong><small>${pct(generalPct)} desde o início</small></div>
+    </div>
+
+    <div class="grid grid-4 dashboard-kpis">
+      ${cardMetric("Operações realizadas",operations.length,`${closed.length} sessões encerradas`)}
+      ${cardMetric("Resultado acumulado",money(bal-initial),"lucros + perdas + capital",bal>=initial?"positive":"negative")}
+      ${cardMetric("Objetivo geral",money(p.target||0),`Meta principal · ${pct(initial?(p.target-initial)/initial*100:0)}`)}
+      ${cardMetric("Crescimento do saldo",pct(generalPct),"saldo atual × saldo inicial",generalPct>=0?"positive":"negative")}
+    </div>
+
+    <div class="card section-space daily-focus">
+      <div class="card-header"><div><span class="kicker">DESTAQUE DO DIA</span><h2>Plano operacional atual</h2><p>${esc(mg)} · ${esc(profile)} · ${esc(assetSymbol)}</p></div><span class="pill blue">PROJEÇÃO DO DIA</span></div>
+      <div class="daily-focus-grid">
+        <div><span class="kicker">Saldo atual</span><strong>${money(bal)}</strong></div>
+        <div><span class="kicker">Busca do dia</span><strong>${num(percent,1)}%</strong></div>
+        <div><span class="kicker">Busca US$</span><strong>${money(daySearch)}</strong></div>
+        <div><span class="kicker">Lote sugerido</span><strong>${num(plan.baseLot,2)}</strong></div>
+        <div><span class="kicker">Pontos a buscar</span><strong>${num(plan.points,0)} pts</strong></div>
+        <div><span class="kicker">Saldo projetado</span><strong>${money(projectedAfter)}</strong></div>
+      </div>
+    </div>
+
     <div class="grid grid-2 section-space">
       <div class="card">
-        <div class="card-header"><div><h2>Gerenciamento atual</h2><p>${esc(profile)} · ${esc(state.settings.defaultAsset)}</p></div></div>
-        ${sug.warning?`<div class="callout"><strong>${esc(sug.warning)}</strong></div>`:`<div class="stat-strip">
-          <div><span class="kicker">Saldo atual</span><div class="v">${money(bal)}</div></div>
-          <div><span class="kicker">Meta do dia</span><div class="v">${num(state.settings.minDailySearchPercent??20,1)}%</div></div>
-          <div><span class="kicker">Busca líquida</span><div class="v">${money(plan.netTarget)}</div></div>
-          <div><span class="kicker">Lote sugerido</span><div class="v">${num(plan.lot,2)}</div></div>
-          <div><span class="kicker">Pontos a buscar</span><div class="v">${num(plan.points,0)} pts</div></div>
+        <div class="card-header"><div><h2>Precisão operacional</h2><p>Percentual médio de acertos e erros das operações encerradas.</p></div></div>
+        <div class="accuracy-ring">
+          <div class="accuracy-main"><strong>${pct(winRate)}</strong><span>WIN</span></div>
+          <div class="accuracy-stats">
+            <div><span class="dot win"></span><strong>${wins}</strong><small>Acertos · ${pct(winRate)}</small></div>
+            <div><span class="dot loss"></span><strong>${losses}</strong><small>Erros · ${pct(lossRate)}</small></div>
+          </div>
         </div>
-        <div class="callout section-space"><strong>Meta operacional líquida: ${money(plan.netTarget)}</strong><span class="note">Para atingir esse valor líquido, o plano considera ${money(plan.fees)} de comissão e exige aproximadamente ${num(plan.points,0)} pontos brutos no lote sugerido.</span></div>`}
       </div>
       <div class="card">
-        <div class="card-header"><div><h2>Evolução operacional</h2><p>Resultado percentual por sessão e resultado geral.</p></div></div>
-        <div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Data</th><th>Resultado</th><th>% da sessão</th></tr></thead><tbody>
-        ${closed.length?closed.slice(-12).map((ss,i)=>{const t=sessionSummary(ss.id), n=operationalSessionNumber(ss.date,ss.id);return `<tr><td>${n}</td><td>${ss.date}</td><td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td><td class="${sessionPercent(ss)>=0?'positive':'negative'}">${pct(sessionPercent(ss))}</td></tr>`}).join(""):`<tr><td colspan="4"><div class="empty">Nenhuma sessão encerrada.</div></td></tr>`}
-        </tbody></table></div>
-        <div class="callout section-space"><strong>Saldo do projeto: ${money(initial)} + ${money(bal-initial)} = ${money(bal)}</strong><span class="note">O saldo atual é recalculado pelo saldo inicial do projeto, somando todos os resultados líquidos das operações e os depósitos/saques registrados.</span></div>
+        <div class="card-header"><div><h2>Objetivo do dia × resultado</h2><p>O resultado real é comparado à busca definida para o saldo atual.</p></div></div>
+        <div class="stat-strip">
+          <div><span class="kicker">Meta %</span><div class="v">${num(percent,1)}%</div></div>
+          <div><span class="kicker">Meta US$</span><div class="v">${money(daySearch)}</div></div>
+          <div><span class="kicker">Resultado hoje</span><div class="v ${s.net>=0?'positive':'negative'}">${money(s.net)}</div></div>
+          <div><span class="kicker">Atingimento</span><div class="v">${daySearch?pct(s.net/daySearch*100):"0,00%"}</div></div>
+        </div>
       </div>
     </div>
+
     <div class="card section-space">
-      <div class="card-header"><div><h2>Performance</h2><p>Resumo integrado ao Dashboard.</p></div></div>
+      <div class="card-header"><div><h2>Desempenho mensal</h2><p>${String(month).padStart(2,"0")}/${year} · do primeiro ao último dia do mês. Dias sem operação permanecem neutros.</p></div><span class="pill blue">MÊS OPERACIONAL</span></div>
+      ${renderMonthlyDailyChart(monthDays)}
+    </div>
+
+    <div class="card section-space annual-card">
+      <div class="card-header"><div><span class="kicker">VISÃO MACRO</span><h2>Ano operacional ${year}</h2><p>Parâmetro geral consolidado do ano corrente.</p></div><span class="pill green">ANO ATUAL</span></div>
+      <div class="grid grid-4">
+        ${cardMetric("Operações",yearOps.length,"registradas no ano")}
+        ${cardMetric("Resultado",money(yearNet),"líquido do ano",yearNet>=0?"positive":"negative")}
+        ${cardMetric("Win rate",pct(yearRate),`${yearWins} wins / ${yearLosses} losses`)}
+        ${cardMetric("Sessões",new Set(yearOps.map(x=>x.sessionId)).size,"sessões com operação")}
+      </div>
+    </div>
+
+    <div class="card section-space">
+      <div class="card-header"><div><h2>Resumo do projeto</h2><p>Visão financeira completa sem confundir resultado operacional com movimentação de capital.</p></div></div>
       <div class="stat-strip">
-        <div><span class="kicker">Resultado acumulado</span><div class="v ${o.net>=0?'positive':'negative'}">${money(o.net)}</div></div>
-        <div><span class="kicker">Drawdown máximo</span><div class="v ${o.maxDD>0?'negative':'positive'}">${pct(o.maxDD)}</div></div>
-        <div><span class="kicker">Wins</span><div class="v">${o.wins}</div></div>
-        <div><span class="kicker">Losses</span><div class="v">${o.losses}</div></div>
+        <div><span class="kicker">Saldo inicial</span><div class="v">${money(initial)}</div></div>
+        <div><span class="kicker">Saldo atual</span><div class="v">${money(bal)}</div></div>
+        <div><span class="kicker">Meta principal</span><div class="v">${money(p.target||0)}</div></div>
+        <div><span class="kicker">Falta para meta</span><div class="v">${money(Math.max(0,(p.target||0)-bal))}</div></div>
       </div>
-    </div>
-    <div class="card section-space">
-      <div class="card-header"><div><h2>Gráfico por dia operacional</h2><p>Cada barra representa o resultado percentual consolidado daquele dia.</p></div></div>
-      ${renderOperationalDayChart(days)}
     </div>`;
+
+  loadMarketTicker();
+}
+function buildMonthlyDailyPerformance(year,month){
+  const last=new Date(year,month,0).getDate();
+  const byDay={};
+  (state.operations||[]).forEach(o=>{
+    const d=new Date(`${o.date}T12:00:00`);
+    if(d.getFullYear()===year&&d.getMonth()+1===month){
+      const day=d.getDate();
+      byDay[day]=(byDay[day]||0)+(Number(o.net)||0);
+    }
+  });
+  const out=[];
+  for(let day=1;day<=last;day++){
+    const date=`${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    const base=day===1?projectInitialBalance():(state.operations||[]).filter(o=>o.date<date).reduce((a,o)=>a+(Number(o.net)||0),projectInitialBalance());
+    const net=Number((byDay[day]||0).toFixed(2));
+    out.push({day,date,net,pct:base?net/base*100:0});
+  }
+  return out;
+}
+function renderMonthlyDailyChart(data){
+  if(!data.length)return `<div class="empty">Sem dados mensais.</div>`;
+  const max=Math.max(...data.map(x=>Math.abs(x.pct)),0.5);
+  return `<div class="monthly-chart">${data.map(d=>`
+    <div class="month-col" title="${d.date}: ${money(d.net)} · ${pct(d.pct)}">
+      <div class="month-bar-wrap"><div class="month-bar ${d.pct<0?'neg':''} ${d.net===0?'zero':''}" style="height:${d.net===0?4:Math.max(8,Math.abs(d.pct)/max*150)}px"></div></div>
+      <span>${d.day}</span>
+    </div>`).join("")}</div>`;
+}
+async function loadMarketTicker(){
+  const root=document.getElementById("market-ticker"); if(!root)return;
+  const symbols={SP500:"^GSPC",NASDAQ:"^IXIC",DOW:"^DJI",FTSE:"^FTSE",NIKKEI:"^N225",GOLD:"GC=F",OIL:"CL=F",USD_BRL:"BRL=X"};
+  const labels={SP500:"S&P 500",NASDAQ:"NASDAQ",DOW:"Dow Jones",FTSE:"FTSE 100",NIKKEI:"Nikkei",GOLD:"Ouro",OIL:"Petróleo",USD_BRL:"Dólar comercial"};
+  const fetchQuote=async(symbol)=>{
+    const u=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1m`;
+    const r=await fetch(u,{cache:"no-store"}); if(!r.ok)throw new Error("market");
+    const j=await r.json(),res=j.chart.result?.[0],meta=res?.meta;
+    const price=Number(meta?.regularMarketPrice||meta?.previousClose||0);
+    const prev=Number(meta?.previousClose||price);
+    return {price,change:prev?(price-prev)/prev*100:0};
+  };
+  try{
+    const entries=await Promise.all(Object.entries(symbols).map(async([key,sym])=>[key,await fetchQuote(sym)]));
+    let html=entries.map(([key,q])=>`<span class="ticker-item"><b>${labels[key]}</b><strong>${q.price.toLocaleString("en-US",{maximumFractionDigits:key==="USD_BRL"?4:2})}</strong><em class="${q.change>=0?'up':'down'}">${q.change>=0?"+":""}${q.change.toFixed(2)}%</em></span>`).join("");
+    try{
+      const ptax=await fetch("https://economia.awesomeapi.com.br/json/last/USD-BRL",{cache:"no-store"});
+      if(ptax.ok){
+        const pj=await ptax.json(), bid=Number(pj.USDBRL?.bid||0);
+        if(bid)html+=`<span class="ticker-item"><b>Dólar cambial</b><strong>${bid.toLocaleString("pt-BR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong><em class="neutral">PTAX/FX</em></span>`;
+      }
+    }catch(_){}
+    root.querySelector(".ticker-items").innerHTML=html;
+  }catch(err){
+    root.querySelector(".ticker-items").innerHTML=`<span class="ticker-offline">Mercados indisponíveis no momento. O gerenciamento continua funcionando normalmente.</span>`;
+  }
 }
 function renderOperationalDayChart(days){
   if(!days.length)return `<div class="empty">Nenhum dia operacional encerrado.</div>`;
@@ -440,9 +546,10 @@ function renderSession(){
   const bal=Number(state.settings.currentBalance)||0;
   const active=state.activeSessionId?state.sessions.find(x=>x.id===state.activeSessionId):null;
   const t=active?sessionSummary(active.id):null;
-  const defaultAsset=Object.keys(state.assets).length===1?Object.keys(state.assets)[0]:state.settings.defaultAsset;
-  const profile=state.settings.defaultProfile;
-  const opMgmt=active?.operationalManagement||state.settings.defaultOperationalManagement||"Scalping";
+  const projection=ensureProjectionState();
+  const defaultAsset=Object.keys(state.assets).length===1?Object.keys(state.assets)[0]:(projection.asset||state.settings.defaultAsset);
+  const profile=projection.activeProfile||state.settings.defaultProfile;
+  const opMgmt=active?.operationalManagement||projection.operationalManagement||state.settings.defaultOperationalManagement||"Scalping";
   const mgCfg=(state.settings.operationalManagements||{})[opMgmt]||{};
   const sessionPlan=tradePlan(active?Number(active.balanceBefore)||bal:bal,opMgmt,active?.profile||profile,active?.asset||defaultAsset,active?.searchPercent??mgCfg.searchPercent??state.settings.minDailySearchPercent??20);
   document.getElementById("view-session").innerHTML=`
@@ -454,14 +561,11 @@ function renderSession(){
           <div class="field"><label>Hora de início</label><input type="time" name="startTime" value="${active?active.startTime:new Date().toTimeString().slice(0,5)}" ${active?"disabled":""} required></div>
           <div class="field"><label>Ativo</label><select name="asset" ${active?"disabled":""}>${Object.values(state.assets).map(x=>`<option ${x.symbol===(active?.asset||defaultAsset)?"selected":""}>${esc(x.symbol)}</option>`).join("")}</select></div>
           <div class="field"><label>Gerenciamento operacional</label><select name="operationalManagement" ${active?"disabled":""}>${Object.keys(state.settings.operationalManagements||{}).map(x=>`<option ${x===(active?.operationalManagement||state.settings.defaultOperationalManagement||"Scalping")?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
-          <div class="field"><label>Perfil financeiro / lote</label><select name="profile" ${active?"disabled":""}>${Object.keys(state.settings.lotRules).map(x=>`<option ${x===(active?.profile||profile)?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
-          <div class="field"><label>% de busca do dia</label><input type="number" name="searchPercent" min="0" step="0.1" value="${active?active.searchPercent:(mgCfg.searchPercent??state.settings.minDailySearchPercent??20)}" ${active?"disabled":""}></div>
-          <div class="field"><label>Busca do dia (US$)</label><input type="text" value="${money(bal*((active?.searchPercent??(state.settings.minDailySearchPercent??20))/100))}" readonly></div>
-          <div class="field"><label>Lote base sugerido</label><input type="text" value="${num(sessionPlan.baseLot,2)}" readonly></div>
-          <div class="field"><label>Máx. entradas</label><input type="text" value="${sessionPlan.maxEntries}" readonly></div>
-          <div class="field"><label>Exposição máxima</label><input type="text" value="${num(sessionPlan.maxTotalLot,2)} lote" readonly></div>
-          <div class="field"><label>Pontos de objetivo Take</label><input type="number" name="targetPoints" value="${active?.targetPoints??mgCfg.takePoints??state.settings.dailyTargetPoints}" ${active?"disabled":""}></div>
-          <div class="field"><label>Pontos de Stop</label><input type="number" name="stopPoints" value="${active?.stopPoints??mgCfg.stopPoints??state.settings.dailyStopPoints}" ${active?"disabled":""}></div>
+          <div class="field"><label>Perfil financeiro</label><input type="text" value="${esc(active?.profile||profile)}" readonly></div>
+          <div class="field"><label>% de busca do dia</label><input type="number" name="searchPercent" min="0" step="0.1" value="${active?active.searchPercent:(projection.projectionPercent??projection.dailyPercent??mgCfg.searchPercent??state.settings.minDailySearchPercent??20)}" ${active?"disabled":""}></div>
+          <div class="field"><label>Busca do dia (US$)</label><input type="text" value="${money((active?Number(active.balanceBefore)||bal:bal)*((active?.searchPercent??(mgCfg.searchPercent??state.settings.minDailySearchPercent??20))/100))}" readonly></div>
+          <div class="field"><label>Lote de entrada</label><input type="text" value="${num(sessionPlan.baseLot,2)}" readonly></div>
+          <div class="field"><label>Pontos de referência</label><input type="number" name="targetPoints" value="${active?.targetPoints??sessionPlan.points}" ${active?"disabled":""}></div>
           <div class="field full"><label>Estratégia / Setup / Contexto inicial <span class="note">(opcional)</span></label><textarea name="context" ${active?"disabled":""}>${esc(active?.context||"")}</textarea></div>
           <div class="actions full">${active?`<button type="button" class="btn danger" data-close-session="${active.id}">Encerrar sessão</button>`:`<button class="btn primary">Iniciar sessão</button>`}</div>
         </form>
@@ -476,7 +580,7 @@ function renderSession(){
             <div><span class="kicker">Pontos</span><div class="v">${num(t.points,0)}</div></div>
             <div><span class="kicker">Resultado</span><div class="v ${t.net>=0?'positive':'negative'}">${money(t.net)}</div></div>
           </div>
-          <div class="callout section-space"><strong>Plano de entradas</strong><span class="note">Meta líquida ${money(sessionPlan.netTarget)} · Lote base ${num(sessionPlan.baseLot,2)} · até ${sessionPlan.maxEntries} entradas · exposição máxima ${num(sessionPlan.maxTotalLot,2)} lote · espaçamento ${num(sessionPlan.entrySpacingPoints,0)} pts · Take ${num(active.targetPoints,0)} pts · Stop ${num(active.stopPoints,0)} pts.</span></div>
+          <div class="callout section-space"><strong>Plano da sessão</strong><span class="note">Perfil ${esc(active.profile||profile)} · busca ${num(active.searchPercent,1)}% · ${money(sessionPlan.netTarget)} · lote de entrada ${num(sessionPlan.baseLot,2)} · pontos de referência ${num(active.targetPoints,0)} pts.</span></div>
           <div class="callout section-space"><strong>Registrar operação</strong><span class="note">A operação é registrada na página Operações enquanto esta sessão estiver aberta.</span></div>
         `:`<div class="empty">Nenhuma sessão em andamento.</div>`}
       </div>
@@ -492,7 +596,7 @@ function renderSession(){
     e.preventDefault();
     if(state.activeSessionId){toast("Já existe uma sessão aberta.");return;}
     const f=new FormData(form), date=f.get("date");
-    const item={id:uid(),date,startTime:f.get("startTime"),endTime:"",asset:f.get("asset"),operationalManagement:f.get("operationalManagement")||"Scalping",profile:f.get("profile"),searchPercent:Number(f.get("searchPercent"))||20,targetPoints:Number(f.get("targetPoints"))||0,stopPoints:Number(f.get("stopPoints"))||0,context:f.get("context")||"",journal:"",status:"open",balanceBefore:calculatedAccountBalance(),createdAt:new Date().toISOString(),sessionNumber:state.sessions.filter(s=>s.date===date).length+1};
+    const item={id:uid(),date,startTime:f.get("startTime"),endTime:"",asset:f.get("asset"),operationalManagement:f.get("operationalManagement")||"Scalping",profile:f.get("profile"),searchPercent:Number(f.get("searchPercent"))||20,targetPoints:Number(f.get("targetPoints"))||0,stopPoints:0,context:f.get("context")||"",journal:"",status:"open",balanceBefore:calculatedAccountBalance(),createdAt:new Date().toISOString(),sessionNumber:state.sessions.filter(s=>s.date===date).length+1};
     state.sessions.push(item); state.activeSessionId=item.id; save(); toast(`Sessão ${item.sessionNumber} iniciada.`); render();
   };
 }
@@ -937,7 +1041,8 @@ function renderSettingsTab(tab){
             <div class="field"><label>Stop operacional diário (Pontos Nexora)</label><input name="stop" type="number" value="${state.settings.dailyStopPoints}"></div>
             <div class="field"><label>Meta operacional em pontos</label><input name="target" type="number" value="${state.settings.dailyTargetPoints}"></div>
             <div class="field"><label>Lote mínimo permitido</label><input name="lotMinimum" type="number" min="0.01" step="0.01" value="${state.settings.lotMinimum}"></div>
-            <div class="field"><label>Perfil padrão</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===state.settings.defaultProfile?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+            <div class="field"><label>Perfil financeiro padrão</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===state.settings.defaultProfile?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+            <div class="field"><label>Gerenciamento padrão</label><select name="operationalManagement">${Object.keys(state.settings.operationalManagements||{}).map(x=>`<option ${x===(state.settings.defaultOperationalManagement||"Scalping")?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
             <div class="field"><label>Ativo padrão</label><select name="asset">${Object.keys(state.assets).map(x=>`<option ${x===state.settings.defaultAsset?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
             <div class="actions full"><button class="btn primary">Salvar gerenciamento</button></div>
           </form>
@@ -990,32 +1095,6 @@ function renderSettingsTab(tab){
       </div>`;
   }
 
-  if(tab==="gerenciamentos"){
-    document.querySelectorAll(".management-form").forEach(form=>{
-      form.onsubmit=e=>{
-        e.preventDefault();
-        const name=form.dataset.management, d=new FormData(form);
-        state.settings.operationalManagements[name]={
-          ...state.settings.operationalManagements[name],
-          searchPercent:Math.max(0.1,Number(d.get("searchPercent"))||20),
-          minPoints:Math.max(0,Number(d.get("minPoints"))||0),
-          maxPoints:Math.max(0,Number(d.get("maxPoints"))||0),
-          takePoints:Math.max(0,Number(d.get("takePoints"))||0),
-          stopPoints:Math.max(0,Number(d.get("stopPoints"))||0),
-          maxOperations:Math.max(1,Number(d.get("maxOperations"))||1),
-          riskReward:Math.max(0.1,Number(d.get("riskReward"))||1),
-          maxDailyLossPercent:Math.max(0,Number(d.get("maxDailyLossPercent"))||0),
-          maxEntries:Math.max(1,Math.floor(Number(d.get("maxEntries"))||1)),
-          entrySpacingPoints:Math.max(0,Number(d.get("entrySpacingPoints"))||0),
-          lotModel:d.get("lotModel")||"financial_profile",
-          capitalStep:Math.max(1,Number(d.get("capitalStep"))||100),
-          lotStep:Math.max(0.01,Number(d.get("lotStep"))||0.01)
-        };
-        save();toast(`${name} atualizado.`);render();
-      };
-    });
-  }
-
   if(tab==="projeto"){
     const p=ensureProjectionState();
     return `
@@ -1060,7 +1139,7 @@ function renderSettingsTab(tab){
         </div>
         <div class="callout"><strong>Escala desde US$10</strong><span class="note">A tabela agora começa em US$10 e o lote sugerido passa a acompanhar também saldos pequenos.</span></div>
         <div class="table-wrap section-space"><table><thead><tr><th>Capital (US$)</th><th>Lote sugerido</th><th>Ação</th></tr></thead><tbody>
-          ${rules.map((r,i)=>`<tr><td><input class="inline-edit lot-balance" data-i="${i}" type="number" step="25" value="${r.balance}"></td><td><input class="inline-edit lot-value" data-i="${i}" type="number" min="0.01" step="0.01" value="${r.lot.toFixed(2)}"></td><td><button class="btn secondary" data-save-lot-row="${i}">Salvar</button></td></tr>`).join("")}
+          ${rules.map((r,i)=>`<tr><td><input class="inline-edit lot-balance" data-i="${i}" type="number" min="10" step="5" value="${r.balance}"></td><td><input class="inline-edit lot-value" data-i="${i}" type="number" min="0.01" step="0.01" value="${r.lot.toFixed(2)}"></td><td><button class="btn secondary" data-save-lot-row="${i}">Salvar</button></td></tr>`).join("")}
         </tbody></table></div>
         <div class="actions"><button class="btn primary" id="save-lot-table">Salvar tabela ${esc(profile)}</button></div>
       </div>`;
@@ -1106,6 +1185,7 @@ function bindSettingsTab(tab){
       state.settings.dailyTargetPoints=Number(d.get("target"))||500;
       state.settings.lotMinimum=Math.max(0.01,Number(d.get("lotMinimum"))||0.01);
       state.settings.defaultProfile=d.get("profile");
+      state.settings.defaultOperationalManagement=d.get("operationalManagement")||"Scalping";
       state.settings.defaultAsset=d.get("asset");
       save();toast("Gerenciamento atualizado.");render();
     };
@@ -1124,6 +1204,31 @@ function bindSettingsTab(tab){
       if(!confirm("Excluir definitivamente o projeto atual e seus registros locais?"))return;
       state=structuredClone(defaultState);normalizeLotRules();save();toast("Projeto excluído.");render();
     };
+  }
+  if(tab==="gerenciamentos"){
+    document.querySelectorAll(".management-form").forEach(form=>{
+      form.onsubmit=e=>{
+        e.preventDefault();
+        const name=form.dataset.management, d=new FormData(form);
+        state.settings.operationalManagements[name]={
+          ...state.settings.operationalManagements[name],
+          searchPercent:Math.max(0.1,Number(d.get("searchPercent"))||20),
+          minPoints:Math.max(0,Number(d.get("minPoints"))||0),
+          maxPoints:Math.max(0,Number(d.get("maxPoints"))||0),
+          takePoints:Math.max(0,Number(d.get("takePoints"))||0),
+          stopPoints:Math.max(0,Number(d.get("stopPoints"))||0),
+          maxOperations:Math.max(1,Number(d.get("maxOperations"))||1),
+          riskReward:Math.max(0.1,Number(d.get("riskReward"))||1),
+          maxDailyLossPercent:Math.max(0,Number(d.get("maxDailyLossPercent"))||0),
+          maxEntries:Math.max(1,Math.floor(Number(d.get("maxEntries"))||1)),
+          entrySpacingPoints:Math.max(0,Number(d.get("entrySpacingPoints"))||0),
+          lotModel:d.get("lotModel")||"financial_profile",
+          capitalStep:Math.max(1,Number(d.get("capitalStep"))||100),
+          lotStep:Math.max(0.01,Number(d.get("lotStep"))||0.01)
+        };
+        save();toast(`${name} atualizado.`);render();
+      };
+    });
   }
   if(tab==="projeto"){
     const f=document.getElementById("settings-project-form");
@@ -1208,7 +1313,7 @@ function bindSettingsTab(tab){
       const i=Number(btn.dataset.saveLotRow), profile=state.settings.activeLotProfile||"Moderado 1";
       const bal=document.querySelector(`.lot-balance[data-i="${i}"]`), lot=document.querySelector(`.lot-value[data-i="${i}"]`);
       if(!bal||!lot)return;
-      state.settings.lotRules[profile][i]={balance:Math.max(100,Number(bal.value)||100),lot:Math.max(0.01,Number(lot.value)||0.01)};
+      state.settings.lotRules[profile][i]={balance:Math.max(10,Number(bal.value)||10),lot:Math.max(0.01,Number(lot.value)||0.01)};
       state.settings.lotRules[profile].sort((a,b)=>a.balance-b.balance);
       save();toast("Linha do perfil atualizada.");render();
     });
@@ -1370,6 +1475,14 @@ if(!state.projection.projectionPercent)state.projection.projectionPercent=state.
 if(!Array.isArray(state.projection.secondaryTargets))state.projection.secondaryTargets=[];
 if(!Array.isArray(state.projection.stageDeadlines))state.projection.stageDeadlines=[];
 if(state.projection.stageIndex===undefined)state.projection.stageIndex=0;
+if(state.settings.defaultOperationalManagement===undefined)state.settings.defaultOperationalManagement="Scalping";
+ensureOperationalManagements();
+if(state.projection && !state.projection.firstOperationalDate)state.projection.firstOperationalDate=state.projection.startedAt||todayStr();
+if(state.projection && !state.projection.createdDate)state.projection.createdDate=state.projection.firstOperationalDate||todayStr();
+if(state.projection && !state.projection.operationalManagement)state.projection.operationalManagement=state.settings.defaultOperationalManagement||"Scalping";
+if(state.projection && !state.projection.activeProfile)state.projection.activeProfile=state.settings.defaultProfile||"Moderado 1";
+if(state.projection && !state.projection.asset)state.projection.asset=state.settings.defaultAsset||Object.keys(state.assets)[0];
+if(state.projection && !state.projection.projectionPercent)state.projection.projectionPercent=state.projection.dailyPercent||state.settings.minDailySearchPercent||20;
 if(state.settings.minDailySearchPercent===undefined)state.settings.minDailySearchPercent=20;
 if(state.settings.lotMinimum===undefined)state.settings.lotMinimum=0.01;
 normalizeLotRules();
