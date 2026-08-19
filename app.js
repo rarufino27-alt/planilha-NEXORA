@@ -14,15 +14,18 @@ const defaultState = {
     operationalManagements: {
       "Scalping": {
         searchPercent: 20, minPoints: 50, maxPoints: 500, takePoints: 150, stopPoints: 500,
-        maxOperations: 10, riskReward: 1, maxDailyLossPercent: 20, enabled: true
+        maxOperations: 10, riskReward: 1, maxDailyLossPercent: 20, enabled: true,
+        lotModel:"per_capital", capitalStep:10, lotStep:0.01, maxEntries:3, entrySpacingPoints:50
       },
       "Reversão": {
         searchPercent: 20, minPoints: 100, maxPoints: 1000, takePoints: 300, stopPoints: 500,
-        maxOperations: 5, riskReward: 1, maxDailyLossPercent: 20, enabled: true
+        maxOperations: 5, riskReward: 1, maxDailyLossPercent: 20, enabled: true,
+        lotModel:"financial_profile", capitalStep:100, lotStep:0.01, maxEntries:2, entrySpacingPoints:100
       },
       "Continuação de tendência": {
         searchPercent: 20, minPoints: 200, maxPoints: 2000, takePoints: 600, stopPoints: 500,
-        maxOperations: 5, riskReward: 1.5, maxDailyLossPercent: 20, enabled: true
+        maxOperations: 5, riskReward: 1.5, maxDailyLossPercent: 20, enabled: true,
+        lotModel:"financial_profile", capitalStep:100, lotStep:0.01, maxEntries:2, entrySpacingPoints:150
       }
     },
     lotRules: {
@@ -90,6 +93,34 @@ function ensureOperationalManagements(){
 }
 ensureOperationalManagements();
 
+function managementLotPlan(balance,managementName,profile){
+  const cfg=(state.settings.operationalManagements||{})[managementName]||{};
+  let baseLot=0;
+  if(cfg.lotModel==="per_capital"){
+    const step=Math.max(0.01,Number(cfg.capitalStep)||100);
+    const lotStep=Math.max(0.01,Number(cfg.lotStep)||0.01);
+    baseLot=Math.floor((Number(balance)||0)/step+1e-9)*lotStep;
+  }else{
+    baseLot=lotSuggestion(balance,profile).lot;
+  }
+  baseLot=Number(baseLot.toFixed(2));
+  const maxEntries=Math.max(1,Math.floor(Number(cfg.maxEntries)||1));
+  const maxTotalLot=Number((baseLot*maxEntries).toFixed(2));
+  return {baseLot,maxEntries,maxTotalLot,entrySpacingPoints:Math.max(0,Number(cfg.entrySpacingPoints)||0)};
+}
+function tradePlan(balance,managementName,profile,assetSymbol,percent){
+  const cfg=(state.settings.operationalManagements||{})[managementName]||{};
+  const a=state.assets[assetSymbol]||asset();
+  const plan=managementLotPlan(balance,managementName,profile);
+  const netTarget=(Number(balance)||0)*(Number(percent)||0)/100;
+  const fees=commission(plan.maxTotalLot,a);
+  const grossTarget=netTarget+fees;
+  const points=plan.maxTotalLot>0?moneyToPoints(grossTarget,plan.maxTotalLot,a):0;
+  const stopMoney=plan.maxTotalLot>0?pointsToMoney(Number(cfg.stopPoints)||0,plan.maxTotalLot,a):0;
+  return {...plan,netTarget,fees,grossTarget,points,stopMoney,
+    takePoints:Number(cfg.takePoints)||0,stopPoints:Number(cfg.stopPoints)||0,
+    riskReward:Number(cfg.riskReward)||1};
+}
 function buildDefaultLotRules(){
   const profiles=["Conservador","Moderado","Moderado 1","Agressivo"];
   const rows={};
@@ -322,6 +353,13 @@ function renderDashboard(){
       ${cardMetric("Performance geral",pct(generalPct),"saldo atual × capital inicial",generalPct>=0?"positive":"negative")}
       ${cardMetric("Win rate",pct(o.winRate),`${o.wins} wins / ${o.losses} losses`)}
     </div>
+    ${openPlan?`<div class="card section-space"><div class="card-header"><div><h2>Plano da operação</h2><p>${esc(openMgmt)}</p></div></div><div class="stat-strip">
+      <div><span class="kicker">Lote base</span><div class="v">${num(openPlan.baseLot,2)}</div></div>
+      <div><span class="kicker">Máx. entradas</span><div class="v">${openPlan.maxEntries}</div></div>
+      <div><span class="kicker">Exposição máxima</span><div class="v">${num(openPlan.maxTotalLot,2)}</div></div>
+      <div><span class="kicker">Espaçamento</span><div class="v">${num(openPlan.entrySpacingPoints,0)} pts</div></div>
+      <div><span class="kicker">Meta líquida</span><div class="v">${money(openPlan.netTarget)}</div></div>
+    </div></div>`:""}
     <div class="grid grid-2 section-space">
       <div class="card">
         <div class="card-header"><div><h2>Gerenciamento atual</h2><p>${esc(profile)} · ${esc(state.settings.defaultAsset)}</p></div></div>
@@ -378,6 +416,7 @@ function renderSession(){
   const profile=state.settings.defaultProfile;
   const opMgmt=active?.operationalManagement||state.settings.defaultOperationalManagement||"Scalping";
   const mgCfg=(state.settings.operationalManagements||{})[opMgmt]||{};
+  const sessionPlan=tradePlan(bal,opMgmt,active?.profile||profile,active?.asset||defaultAsset,active?.searchPercent??mgCfg.searchPercent??state.settings.minDailySearchPercent??20);
   document.getElementById("view-session").innerHTML=`
     <div class="grid grid-2">
       <div class="card">
@@ -390,7 +429,9 @@ function renderSession(){
           <div class="field"><label>Perfil financeiro / lote</label><select name="profile" ${active?"disabled":""}>${Object.keys(state.settings.lotRules).map(x=>`<option ${x===(active?.profile||profile)?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
           <div class="field"><label>% de busca do dia</label><input type="number" name="searchPercent" min="0" step="0.1" value="${active?active.searchPercent:(mgCfg.searchPercent??state.settings.minDailySearchPercent??20)}" ${active?"disabled":""}></div>
           <div class="field"><label>Busca do dia (US$)</label><input type="text" value="${money(bal*((active?.searchPercent??(state.settings.minDailySearchPercent??20))/100))}" readonly></div>
-          <div class="field"><label>Lote sugerido</label><input type="text" value="${num(lotSuggestion(bal,active?.profile||profile).lot,2)}" readonly></div>
+          <div class="field"><label>Lote base sugerido</label><input type="text" value="${num(sessionPlan.baseLot,2)}" readonly></div>
+          <div class="field"><label>Máx. entradas</label><input type="text" value="${sessionPlan.maxEntries}" readonly></div>
+          <div class="field"><label>Exposição máxima</label><input type="text" value="${num(sessionPlan.maxTotalLot,2)} lote" readonly></div>
           <div class="field"><label>Pontos de objetivo Take</label><input type="number" name="targetPoints" value="${active?.targetPoints??mgCfg.takePoints??state.settings.dailyTargetPoints}" ${active?"disabled":""}></div>
           <div class="field"><label>Pontos de Stop</label><input type="number" name="stopPoints" value="${active?.stopPoints??mgCfg.stopPoints??state.settings.dailyStopPoints}" ${active?"disabled":""}></div>
           <div class="field full"><label>Estratégia / Setup / Contexto inicial <span class="note">(opcional)</span></label><textarea name="context" ${active?"disabled":""}>${esc(active?.context||"")}</textarea></div>
@@ -407,7 +448,7 @@ function renderSession(){
             <div><span class="kicker">Pontos</span><div class="v">${num(t.points,0)}</div></div>
             <div><span class="kicker">Resultado</span><div class="v ${t.net>=0?'positive':'negative'}">${money(t.net)}</div></div>
           </div>
-          <div class="callout section-space"><strong>Plano da sessão</strong><span class="note">Busca ${num(active.searchPercent,1)}% = ${money((Number(active.balanceBefore)||0)*Number(active.searchPercent||0)/100)} · Lote sugerido ${num(lotSuggestion(active.balanceBefore,active.profile).lot,2)} · Take ${num(active.targetPoints,0)} pts · Stop ${num(active.stopPoints,0)} pts.</span></div>
+          <div class="callout section-space"><strong>Plano de entradas</strong><span class="note">Meta líquida ${money(sessionPlan.netTarget)} · Lote base ${num(sessionPlan.baseLot,2)} · até ${sessionPlan.maxEntries} entradas · exposição máxima ${num(sessionPlan.maxTotalLot,2)} lote · espaçamento ${num(sessionPlan.entrySpacingPoints,0)} pts · Take ${num(active.targetPoints,0)} pts · Stop ${num(active.stopPoints,0)} pts.</span></div>
           <div class="callout section-space"><strong>Registrar operação</strong><span class="note">A operação é registrada na página Operações enquanto esta sessão estiver aberta.</span></div>
         `:`<div class="empty">Nenhuma sessão em andamento.</div>`}
       </div>
@@ -851,9 +892,15 @@ function renderSettingsTab(tab){
                 <div class="field"><label>Take padrão (pts)</label><input name="takePoints" type="number" min="0" value="${c.takePoints}"></div>
                 <div class="field"><label>Stop padrão (pts)</label><input name="stopPoints" type="number" min="0" value="${c.stopPoints}"></div>
                 <div class="field"><label>Máx. operações</label><input name="maxOperations" type="number" min="1" value="${c.maxOperations}"></div>
+                <div class="field"><label>Máx. entradas por operação</label><input name="maxEntries" type="number" min="1" value="${c.maxEntries||1}"></div>
+                <div class="field"><label>Espaçamento entre entradas (pts)</label><input name="entrySpacingPoints" type="number" min="0" value="${c.entrySpacingPoints||0}"></div>
+                <div class="field"><label>Modelo de lote</label><select name="lotModel"><option value="financial_profile" ${(c.lotModel||"financial_profile")==="financial_profile"?"selected":""}>Perfil financeiro</option><option value="per_capital" ${c.lotModel==="per_capital"?"selected":""}>Lote por capital</option></select></div>
+                <div class="field"><label>Capital por lote-base (US$)</label><input name="capitalStep" type="number" min="1" step="1" value="${c.capitalStep||100}"></div>
+                <div class="field"><label>Incremento de lote-base</label><input name="lotStep" type="number" min="0.01" step="0.01" value="${c.lotStep||0.01}"></div>
                 <div class="field"><label>Risco / Retorno</label><input name="riskReward" type="number" min="0.1" step="0.1" value="${c.riskReward}"></div>
                 <div class="field"><label>Perda máxima diária (%)</label><input name="maxDailyLossPercent" type="number" min="0" step="0.1" value="${c.maxDailyLossPercent}"></div>
                 <div class="field"><label>Ativo permitido</label><select name="asset">${Object.keys(state.assets).map(a=>`<option>${esc(a)}</option>`).join("")}</select></div>
+                <div class="callout full"><strong>Plano de entradas</strong><span class="note">O Nexora trata entradas múltiplas como uma única ideia operacional, acumulando exposição e respeitando o limite configurado.</span></div>
                 <div class="actions full"><button class="btn primary">Salvar ${esc(name)}</button></div>
               </form>
             </div>`).join("")}
@@ -875,7 +922,12 @@ function renderSettingsTab(tab){
           stopPoints:Math.max(0,Number(d.get("stopPoints"))||0),
           maxOperations:Math.max(1,Number(d.get("maxOperations"))||1),
           riskReward:Math.max(0.1,Number(d.get("riskReward"))||1),
-          maxDailyLossPercent:Math.max(0,Number(d.get("maxDailyLossPercent"))||0)
+          maxDailyLossPercent:Math.max(0,Number(d.get("maxDailyLossPercent"))||0),
+          maxEntries:Math.max(1,Math.floor(Number(d.get("maxEntries"))||1)),
+          entrySpacingPoints:Math.max(0,Number(d.get("entrySpacingPoints"))||0),
+          lotModel:d.get("lotModel")||"financial_profile",
+          capitalStep:Math.max(1,Number(d.get("capitalStep"))||100),
+          lotStep:Math.max(0.01,Number(d.get("lotStep"))||0.01)
         };
         save();toast(`${name} atualizado.`);render();
       };
@@ -1236,6 +1288,8 @@ function renderOperations(){
   const a=asset();
   const disabled=!open;
   const last=state.operations[0];
+  const openMgmt=open?.operationalManagement||state.settings.defaultOperationalManagement||"Scalping";
+  const openPlan=open?tradePlan(Number(open.balanceBefore)||calculatedAccountBalance(),openMgmt,open.profile||state.settings.defaultProfile,open.asset||state.settings.defaultAsset,open.searchPercent):null;
   document.getElementById("view-operations").innerHTML=`
     <div class="callout ${disabled?'':'green'}"><strong>${disabled?"Nenhuma sessão operacional aberta.":"Sessão ativa: "+operationalSessionNumber(open.date,open.id)+" · "+open.date}</strong><span class="note">${disabled?"Abra uma sessão operacional antes de registrar qualquer operação.":"Todos os lançamentos serão vinculados automaticamente à sessão ativa."}</span></div>
     <div class="grid grid-2 section-space">
@@ -1246,11 +1300,12 @@ function renderOperations(){
           <div class="field"><label>Horário</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" ${disabled?"disabled":""} required></div>
           <div class="field"><label>Ativo</label><select name="asset" ${disabled?"disabled":""}>${Object.values(state.assets).map(x=>`<option ${x.symbol===(open?.asset||state.settings.defaultAsset)?"selected":""}>${x.symbol}</option>`).join("")}</select></div>
           <div class="field"><label>Direção</label><select name="direction" ${disabled?"disabled":""}><option value="1">BUY</option><option value="-1">SELL</option></select></div>
-          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,2)}" ${disabled?"disabled":""} required></div>
+          <div class="field"><label>Nº da entrada</label><input type="number" min="1" name="entryNumber" value="${open?((state.operations.filter(o=>o.sessionId===open.id).length)+1):1}" ${disabled?"disabled":""}></div>
+          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(openPlan?.baseLot??lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,2)}" ${disabled?"disabled":""} required></div>
           <div class="field"><label>Entrada</label><input type="number" step="0.01" name="entry" ${disabled?"disabled":""} required></div>
           <div class="field"><label>Saída</label><input type="number" step="0.01" name="exit" ${disabled?"disabled":""} required></div>
           <div class="field"><label>Resultado líquido MT5 (US$)</label><input type="number" step="0.01" name="net" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Comissão MT5 (US$)</label><input type="number" step="0.01" name="commission" value="${commission(lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,a).toFixed(2)}" ${disabled?"disabled":""}></div>
+          <div class="field"><label>Comissão MT5 (US$)</label><input type="number" step="0.01" name="commission" value="${commission(openPlan?.baseLot??lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,a).toFixed(2)}" ${disabled?"disabled":""}></div>
           <div class="field full"><label>Observação</label><textarea name="note" ${disabled?"disabled":""}></textarea></div>
           <div class="actions full"><button class="btn primary" ${disabled?"disabled":""}>Registrar operação</button></div>
         </form>
@@ -1278,12 +1333,20 @@ function renderOperations(){
   const detailed=document.getElementById("op-detailed");
   if(detailed) detailed.onsubmit=e=>{
     e.preventDefault();const f=new FormData(e.target),aa=state.assets[f.get("asset")],points=pointsFromPrices(f.get("entry"),f.get("exit"),Number(f.get("direction")),aa),lot=Number(f.get("lot")),net=Number(f.get("net")),comm=Number(f.get("commission"))||0,gross=pointsToMoney(points,lot,aa);
-    addOperation({date:f.get("date"),time:f.get("time"),sessionId:open.id,asset:f.get("asset"),direction:Number(f.get("direction")),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:Number(f.get("entry")),exit:Number(f.get("exit")),strategy:open.context||"",note:f.get("note"),mode:"detailed"});
+    const entryNumber=Math.max(1,Number(f.get("entryNumber"))||1);
+    if(openPlan && entryNumber>openPlan.maxEntries){toast(`Limite de ${openPlan.maxEntries} entradas atingido para ${openMgmt}.`);return;}
+    const used=state.operations.filter(o=>o.sessionId===open.id).reduce((s,o)=>s+(Number(o.lot)||0),0);
+    if(openPlan && used+lot>openPlan.maxTotalLot+1e-9){toast(`Exposição máxima da operação: ${num(openPlan.maxTotalLot,2)} lote.`);return;}
+    addOperation({date:f.get("date"),time:f.get("time"),sessionId:open.id,asset:f.get("asset"),direction:Number(f.get("direction")),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:Number(f.get("entry")),exit:Number(f.get("exit")),strategy:open.context||"",note:f.get("note"),mode:"detailed",entryNumber});
   };
   const quick=document.getElementById("op-quick");
   if(quick) quick.onsubmit=e=>{
     e.preventDefault();const f=new FormData(e.target),lot=Number(f.get("lot")),aa=state.assets[f.get("asset")],points=Number(f.get("points")),net=Number(f.get("net")),comm=Number(f.get("commission"))||0,gross=pointsToMoney(points,lot,aa);
-    addOperation({date:f.get("date"),time:f.get("time"),sessionId:open.id,asset:f.get("asset"),direction:Number(f.get("direction")),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:null,exit:null,strategy:open.context||"",note:f.get("note"),mode:"quick"});
+    const entryNumber=Math.max(1,Number(f.get("entryNumber"))||1);
+    if(openPlan && entryNumber>openPlan.maxEntries){toast(`Limite de ${openPlan.maxEntries} entradas atingido para ${openMgmt}.`);return;}
+    const used=state.operations.filter(o=>o.sessionId===open.id).reduce((s,o)=>s+(Number(o.lot)||0),0);
+    if(openPlan && used+lot>openPlan.maxTotalLot+1e-9){toast(`Exposição máxima da operação: ${num(openPlan.maxTotalLot,2)} lote.`);return;}
+    addOperation({date:f.get("date"),time:f.get("time"),sessionId:open.id,asset:f.get("asset"),direction:Number(f.get("direction")),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:null,exit:null,strategy:open.context||"",note:f.get("note"),mode:"quick",entryNumber});
   };
 }
 function renderLastOperation(o){

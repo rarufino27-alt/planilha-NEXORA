@@ -190,3 +190,20 @@ Cada modalidade possui parâmetros próprios e editáveis:
 - perda máxima diária (%)
 
 A Sessão Operacional passa a registrar qual gerenciamento operacional foi selecionado, mantendo separado o perfil financeiro responsável pelo lote.
+
+
+## V2.1 — Plano de entradas multi-estratégia
+
+Camada comum para todas as modalidades:
+- lote-base por perfil financeiro ou por capital;
+- máximo de entradas por ideia operacional;
+- exposição máxima acumulada;
+- espaçamento entre entradas em pontos;
+- numeração das entradas;
+- bloqueio quando o limite de entradas ou exposição é atingido;
+- planejamento de meta líquida e comissão;
+- visualização do plano na Sessão Operacional e na página Operações.
+
+O Scalping foi configurado inicialmente com modelo por capital:
+US$10 → 0,01 lote, com até 3 entradas e exposição máxima de 0,03 lote.
+Os valores são editáveis em Configurações → Gerenciamentos.
