@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1f4d">
-  <meta name="description" content="Planilha Nexora — gerenciamento operacional do mercado financeiro.">
-  <title>Planilha Nexora — Gerenciamento</title>
+  <meta name="description" content="Gerenciamento NEXORA — gerenciamento operacional do mercado financeiro.">
+  <title>Gerenciamento NEXORA</title>
   <link rel="icon" href="assets/nexora-logo.png">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -15,38 +15,39 @@
       <div class="brand">
         <img src="assets/nexora-logo.png" alt="Nexora Gerenciamento">
         <div>
-          <strong>PLANILHA</strong>
+          <strong>GERENCIAMENTO</strong>
           <span>NEXORA</span>
         </div>
       </div>
 
+      <div class="sidebar-nav-head">
+        <span>MENU PRINCIPAL</span>
+        <button class="sidebar-toggle" id="sidebar-toggle" title="Recolher menu" aria-label="Recolher menu">‹</button>
+      </div>
       <nav class="nav">
-        <button class="nav-item active" data-view="dashboard">Dashboard</button>
-        <button class="nav-item" data-view="session">Sessão operacional</button>
-        <button class="nav-item" data-view="operations">Operações</button>
-        <button class="nav-item" data-view="calculator">Calculadora</button>
-        <button class="nav-item" data-view="projection">Projeção & objetivos</button>
-        <button class="nav-item" data-view="journal">Diário operacional</button>
-        <button class="nav-item" data-view="settings">Configurações</button>
+        <button class="nav-item active" data-view="dashboard"><span class="nav-label">Dashboard</span></button>
+        <button class="nav-item" data-view="projection"><span class="nav-label">Projeções e Objetivos</span></button>
+        <button class="nav-item" data-view="session"><span class="nav-label">Sessão Operacional</span></button>
+        <button class="nav-item" data-view="operations"><span class="nav-label">Operações</span></button>
+        <button class="nav-item" data-view="journal"><span class="nav-label">Diário Operacional</span></button>
+        <button class="nav-item" data-view="settings"><span class="nav-label">Configurações</span></button>
+        <button class="nav-item" data-view="calculator"><span class="nav-label">Calculadora</span></button>
       </nav>
 
-      <div class="sidebar-footer">
-        <span class="status-dot"></span>
-        <span>Modo local ativo</span>
+      <div class="sidebar-tools">
+        <button class="sidebar-tool" id="export-sidebar">Exportar backup</button>
+        <label class="sidebar-tool">Importar backup<input type="file" id="import-file" accept=".json"></label>
+        <button class="sidebar-tool" id="theme-toggle">Modo escuro</button>
       </div>
     </aside>
 
     <main class="main">
       <header class="topbar">
         <div>
-          <p class="eyebrow">GERENCIAMENTO OPERACIONAL</p>
+          <p class="eyebrow">GERENCIAMENTO NEXORA</p>
           <h1 id="page-title">Dashboard</h1>
         </div>
         <div class="top-actions">
-          <button class="btn secondary" id="export-btn">Exportar backup</button>
-          <label class="btn secondary file-btn">Importar backup
-            <input type="file" id="import-file" accept=".json">
-          </label>
           <button class="btn primary" data-view-target="session">+ Sessão operacional</button>
         </div>
       </header>

@@ -3,6 +3,7 @@ const KEY = "nexora_v1";
 const defaultState = {
   version: 1,
   settings: {
+    theme: "light",
     initialBalance: 400,
     currentBalance: 96.47,
     dailyStopPoints: 500,
@@ -337,14 +338,30 @@ function sessionSummary(sessionId){
   },0);
   return {ops,net,gross,points,commission,wins,losses,count:ops.length,exposure};
 }
+function applyTheme(){
+  const theme=state.settings.theme==="dark"?"dark":"light";
+  document.documentElement.dataset.theme=theme;
+  const btn=document.getElementById("theme-toggle");
+  if(btn)btn.textContent=theme==="dark"?"Modo claro":"Modo escuro";
+  const meta=document.querySelector('meta[name="theme-color"]');
+  if(meta)meta.setAttribute("content",theme==="dark"?"#07152f":"#0b1f4d");
+}
+function setupTheme(){
+  applyTheme();
+  const btn=document.getElementById("theme-toggle");
+  if(btn)btn.onclick=()=>{
+    state.settings.theme=state.settings.theme==="dark"?"light":"dark";
+    save();applyTheme();render();
+  };
+}
 function render(){
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   const target=document.getElementById(`view-${currentView}`); if(target) target.classList.add("active");
   document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===currentView));
   document.getElementById("page-title").textContent={
-    dashboard:"Dashboard",session:"Sessão operacional",operations:"Operações",calculator:"Calculadora",
-    projection:"Projeção & objetivos",journal:"Diário operacional",performance:"Performance",capital:"Capital",
-    assets:"Ativos",settings:"Configurações"
+    dashboard:"Visão Geral",session:"Sessão Operacional",operations:"Registro de Operações",calculator:"Calculadora",
+    projection:"Projeções e Objetivos",journal:"Diário Operacional",performance:"Performance",capital:"Capital",
+    assets:"Ativos",settings:"Central de Configurações"
   }[currentView];
   ({
     dashboard:renderDashboard,session:renderSession,operations:renderOperations,calculator:renderCalculator,
@@ -356,8 +373,18 @@ function render(){
 function nav(){
   document.querySelectorAll("[data-view]").forEach(el=>el.onclick=()=>{
     currentView=el.dataset.view; render();
+    if(document.body.classList.contains("sidebar-collapsed") && window.innerWidth<900)
+      document.body.classList.remove("sidebar-collapsed");
   });
   document.querySelectorAll("[data-view-target]").forEach(el=>el.onclick=()=>{currentView=el.dataset.viewTarget;render()});
+  const toggle=document.getElementById("sidebar-toggle");
+  if(toggle)toggle.onclick=()=>{
+    document.body.classList.toggle("sidebar-collapsed");
+    const collapsed=document.body.classList.contains("sidebar-collapsed");
+    toggle.textContent=collapsed?"›":"‹";
+    toggle.title=collapsed?"Expandir menu":"Recolher menu";
+  };
+  setupTheme();
 }
 function cardMetric(label,value,sub="",cls=""){
   return `<div class="card metric"><div class="label">${label}</div><div class="value ${cls}">${value}</div><div class="sub">${sub}</div></div>`;
@@ -551,7 +578,10 @@ function renderSession(){
   const profile=projection.activeProfile||state.settings.defaultProfile;
   const opMgmt=active?.operationalManagement||projection.operationalManagement||state.settings.defaultOperationalManagement||"Scalping";
   const mgCfg=(state.settings.operationalManagements||{})[opMgmt]||{};
-  const sessionPlan=tradePlan(active?Number(active.balanceBefore)||bal:bal,opMgmt,active?.profile||profile,active?.asset||defaultAsset,active?.searchPercent??mgCfg.searchPercent??state.settings.minDailySearchPercent??20);
+  const sessionBalance=active?Number(active.balanceBefore)||bal:bal;
+  const sessionProjection={...projection,activeProfile:active?.profile||profile,asset:active?.asset||defaultAsset,operationalManagement:opMgmt,projectionPercent:active?.searchPercent??projection.projectionPercent??projection.dailyPercent??mgCfg.searchPercent??state.settings.minDailySearchPercent??20};
+  const projectedPlan=projectionSession(sessionProjection,sessionProjection.activeProfile,sessionBalance);
+  const sessionPlan={...projectedPlan,baseLot:projectedPlan.lot,netTarget:projectedPlan.dailyTarget};
   document.getElementById("view-session").innerHTML=`
     <div class="grid grid-2">
       <div class="card">
@@ -1452,7 +1482,7 @@ document.addEventListener("click",e=>{
     const txt=prompt("Editar registro:",n.text);if(txt===null)return;n.text=txt;save();toast("Diário atualizado.");render();
   }
 });
-document.getElementById("export-btn").onclick=()=>{
+document.getElementById("export-sidebar").onclick=()=>{
   const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`nexora-backup-${todayStr()}.json`;a.click();URL.revokeObjectURL(a.href);
 };
@@ -1483,11 +1513,12 @@ if(state.projection && !state.projection.operationalManagement)state.projection.
 if(state.projection && !state.projection.activeProfile)state.projection.activeProfile=state.settings.defaultProfile||"Moderado 1";
 if(state.projection && !state.projection.asset)state.projection.asset=state.settings.defaultAsset||Object.keys(state.assets)[0];
 if(state.projection && !state.projection.projectionPercent)state.projection.projectionPercent=state.projection.dailyPercent||state.settings.minDailySearchPercent||20;
+if(state.settings.theme===undefined)state.settings.theme="light";
 if(state.settings.minDailySearchPercent===undefined)state.settings.minDailySearchPercent=20;
 if(state.settings.lotMinimum===undefined)state.settings.lotMinimum=0.01;
 normalizeLotRules();
 rebuildCurrentBalance();save();
-nav(); render();function renderSessionsTable(){
+nav(); applyTheme(); render();function renderSessionsTable(){
   if(!state.sessions.length)return `<div class="empty">Nenhuma sessão registrada.</div>`;
   const ordered=[...state.sessions].sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
   return `<div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Data</th><th>Horário</th><th>Ativo</th><th>Ops</th><th>Resultado</th><th>%</th><th>Status</th><th>Ação</th></tr></thead><tbody>${ordered.slice(0,100).map(s=>{const t=sessionSummary(s.id),n=operationalSessionNumber(s.date,s.id);return `<tr><td>${n}</td><td>${s.date}</td><td>${s.startTime}${s.endTime?` → ${s.endTime}`:""}</td><td>${esc(s.asset)}</td><td>${t.count}</td><td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td><td class="${sessionPercent(s)>=0?'positive':'negative'}">${pct(sessionPercent(s))}</td><td><span class="pill ${s.status==="open"?"amber":"green"}">${s.status==="open"?"Aberta":"Encerrada"}</span></td><td>${s.status==="closed"?`<button class="btn secondary" data-session-detail="${s.id}">Selecionar</button> <button class="btn secondary" data-edit-session="${s.id}">Editar</button>`:`<button class="btn danger" data-close-session="${s.id}">Encerrar</button>`}</td></tr>`}).join("")}</tbody></table></div>`;

@@ -261,3 +261,73 @@ table tbody tr:hover{background:#f8fbff}
 .annual-card{background:linear-gradient(135deg,#fff,#f5faff)}
 @media(max-width:1200px){.daily-focus-grid{grid-template-columns:repeat(3,1fr)}.market-ticker{align-items:flex-start;flex-direction:column}.ticker-items{width:100%}}
 @media(max-width:700px){.dashboard-hero{flex-direction:column;align-items:flex-start}.daily-focus-grid{grid-template-columns:1fr 1fr}.accuracy-ring{flex-direction:column}.topbar{position:relative}.tabs{overflow-x:auto}.tab-btn{min-width:150px!important}}
+
+/* Nexora V2.6 — collapsible sidebar + light/dark themes */
+.sidebar{width:250px;transition:width .25s ease,background .25s ease;overflow:hidden}
+.main{transition:margin-left .25s ease}
+.sidebar-nav-head{display:flex;align-items:center;justify-content:space-between;padding:14px 12px 8px;color:#8eadd7;font-size:10px;font-weight:800;letter-spacing:1.1px}
+.sidebar-toggle{width:30px;height:30px;border:1px solid rgba(255,255,255,.15);border-radius:8px;background:rgba(255,255,255,.07);color:#fff;font-size:22px;line-height:1;cursor:pointer}
+.sidebar-toggle:hover{background:rgba(255,255,255,.15)}
+.sidebar-tools{display:grid;gap:7px;padding:14px 10px;border-top:1px solid rgba(255,255,255,.1);margin-top:auto}
+.sidebar-tool{display:flex;align-items:center;justify-content:center;min-height:34px;padding:7px 9px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(255,255,255,.06);color:#dceaff;font-size:11px;font-weight:700;cursor:pointer;text-align:center}
+.sidebar-tool:hover{background:rgba(255,255,255,.13)}
+.sidebar-tool input{display:none}
+.nav-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar-collapsed .sidebar{width:78px}
+.sidebar-collapsed .sidebar .brand{justify-content:center}
+.sidebar-collapsed .sidebar .brand>div,
+.sidebar-collapsed .sidebar-nav-head>span,
+.sidebar-collapsed .sidebar .nav-label,
+.sidebar-collapsed .sidebar-tools .sidebar-tool:not(#theme-toggle){display:none}
+.sidebar-collapsed .sidebar-nav-head{justify-content:center}
+.sidebar-collapsed .sidebar .nav-item{justify-content:center;padding-left:0;padding-right:0}
+.sidebar-collapsed .sidebar-tools{padding:10px 8px}
+.sidebar-collapsed .sidebar-tool{font-size:0}
+.sidebar-collapsed #theme-toggle{font-size:0}
+.sidebar-collapsed #theme-toggle:after{content:"◐";font-size:18px}
+.sidebar-collapsed .main{margin-left:78px;width:calc(100% - 78px)}
+.file-btn{position:relative}
+.top-actions{display:flex;align-items:center;gap:10px}
+
+/* Dark theme */
+html[data-theme="dark"] body{background:linear-gradient(135deg,#071225,#0b1830);color:#dce8fa}
+html[data-theme="dark"] .topbar{background:rgba(8,21,43,.92);border-color:#1b3154}
+html[data-theme="dark"] .topbar h1,html[data-theme="dark"] .eyebrow{color:#e9f2ff}
+html[data-theme="dark"] .card{background:#0d1d35;border-color:#1e3658;box-shadow:0 10px 30px rgba(0,0,0,.22)}
+html[data-theme="dark"] .card-header h2,html[data-theme="dark"] .card-header p{color:#e4efff}
+html[data-theme="dark"] .field input,html[data-theme="dark"] .field select,html[data-theme="dark"] .field textarea{background:#0a172b;border-color:#294667;color:#e7f0ff}
+html[data-theme="dark"] .field label{color:#b9cce5}
+html[data-theme="dark"] table thead th{background:#102642;color:#cfe0f7}
+html[data-theme="dark"] table tbody tr:hover{background:#112742}
+html[data-theme="dark"] table td{border-color:#1b3353;color:#cddcf0}
+html[data-theme="dark"] .callout{background:#0b1c32;border-color:#24476e;color:#dce8fa}
+html[data-theme="dark"] .metric .label,html[data-theme="dark"] .metric .sub{color:#9eb4d0}
+html[data-theme="dark"] .next-day-card,html[data-theme="dark"] .daily-focus,html[data-theme="dark"] .annual-card{background:linear-gradient(135deg,#0d1d35,#102844)}
+html[data-theme="dark"] .next-day-grid>div,html[data-theme="dark"] .daily-focus-grid>div{background:#0a192d;border-color:#254362}
+html[data-theme="dark"] .monthly-chart,html[data-theme="dark"] .chart{background:#0a192d;border-color:#254362}
+html[data-theme="dark"] .tabs{background:#0a192d;border-color:#254362}
+html[data-theme="dark"] .tab-btn.active{background:linear-gradient(135deg,#102844,#12345a)!important;border-color:#347cc9!important}
+html[data-theme="dark"] .tab-copy strong{color:#e5f0ff}
+html[data-theme="dark"] .tab-copy small{color:#9db2cc}
+html[data-theme="dark"] .empty{color:#9eb4d0}
+html[data-theme="dark"] .projection-hero,html[data-theme="dark"] .dashboard-hero{box-shadow:0 16px 40px rgba(0,0,0,.3)}
+html[data-theme="dark"] .hero-meta span{background:rgba(255,255,255,.06)}
+html[data-theme="dark"] .pill{border-color:#294667}
+html[data-theme="dark"] .btn.secondary{background:#132945;border-color:#2a4769;color:#dce9fa}
+html[data-theme="dark"] .stat-strip{background:#0a192d}
+html[data-theme="dark"] .stat-strip>div{border-color:#254362}
+html[data-theme="dark"] .month-col>span{color:#91a7c2}
+@media(max-width:900px){
+  .sidebar{width:78px}
+  .sidebar .brand>div,.sidebar-nav-head>span,.sidebar .nav-label,.sidebar-tools .sidebar-tool:not(#theme-toggle){display:none}
+  .sidebar-nav-head{justify-content:center}
+  .sidebar .nav-item{justify-content:center;padding-left:0;padding-right:0}
+  .sidebar-tools{padding:10px 8px}
+  .sidebar-tool{font-size:0}
+  #theme-toggle{font-size:0}
+  #theme-toggle:after{content:"◐";font-size:18px}
+}
+
+.page-heading-accent{display:inline-flex;align-items:center;gap:8px}
+.page-heading-accent:before{content:"";width:5px;height:26px;border-radius:4px;background:var(--nex-blue)}
+.sidebar-tools{margin-top:auto}

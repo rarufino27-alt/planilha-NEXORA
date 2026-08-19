@@ -278,3 +278,16 @@ Corrigida a normalização das tabelas de lote para aceitar e limpar registros a
 - Removidos da visualização da Sessão Operacional: máximo de entradas, exposição máxima e pontos de stop.
 - Configurações receberam padronização visual e o gerenciamento operacional voltou a ter binding funcional para salvar os parâmetros.
 - Perfis financeiros agora também aceitam saldos a partir de US$10 na sugestão automática.
+
+
+## V2.6 — Navegação, pontos de referência e temas
+
+- O nome da aplicação passa a ser Gerenciamento NEXORA.
+- Menu lateral reorganizado na sequência: Dashboard; Projeções e Objetivos; Sessão Operacional; Operações; Diário Operacional; Configurações; Calculadora.
+- Menu lateral pode ser recolhido/expandido.
+- Exportar backup e Importar backup foram movidos para o menu lateral.
+- Removidos os controles de backup do topo.
+- Removido o indicador “Modo local ativo”.
+- Sessão Operacional passa a usar exatamente os pontos de referência calculados pela projeção do dia, considerando saldo, busca, gerenciamento, perfil, lote e custos.
+- Títulos das páginas foram profissionalizados.
+- Adicionados modos claro e escuro, com preferência persistida no navegador.
