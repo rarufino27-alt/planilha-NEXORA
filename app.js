@@ -11,6 +11,20 @@ const defaultState = {
     defaultProfile: "Moderado 1",
     roundDownLots: true,
     lotMinimum: 0.01,
+    operationalManagements: {
+      "Scalping": {
+        searchPercent: 20, minPoints: 50, maxPoints: 500, takePoints: 150, stopPoints: 500,
+        maxOperations: 10, riskReward: 1, maxDailyLossPercent: 20, enabled: true
+      },
+      "Reversão": {
+        searchPercent: 20, minPoints: 100, maxPoints: 1000, takePoints: 300, stopPoints: 500,
+        maxOperations: 5, riskReward: 1, maxDailyLossPercent: 20, enabled: true
+      },
+      "Continuação de tendência": {
+        searchPercent: 20, minPoints: 200, maxPoints: 2000, takePoints: 600, stopPoints: 500,
+        maxOperations: 5, riskReward: 1.5, maxDailyLossPercent: 20, enabled: true
+      }
+    },
     lotRules: {
       "Conservador": [],
       "Moderado": [],
@@ -59,6 +73,22 @@ const defaultState = {
 };
 
 let state = loadState();
+
+function ensureOperationalManagements(){
+  const defaults=defaultState.settings.operationalManagements;
+  if(!state.settings.operationalManagements || typeof state.settings.operationalManagements!=="object")
+    state.settings.operationalManagements=structuredClone(defaults);
+  Object.keys(defaults).forEach(name=>{
+    if(!state.settings.operationalManagements[name])
+      state.settings.operationalManagements[name]=structuredClone(defaults[name]);
+    state.settings.operationalManagements[name]={
+      ...defaults[name],...state.settings.operationalManagements[name]
+    };
+  });
+  if(!state.settings.defaultOperationalManagement)
+    state.settings.defaultOperationalManagement="Scalping";
+}
+ensureOperationalManagements();
 
 function buildDefaultLotRules(){
   const profiles=["Conservador","Moderado","Moderado 1","Agressivo"];
@@ -346,6 +376,8 @@ function renderSession(){
   const t=active?sessionSummary(active.id):null;
   const defaultAsset=Object.keys(state.assets).length===1?Object.keys(state.assets)[0]:state.settings.defaultAsset;
   const profile=state.settings.defaultProfile;
+  const opMgmt=active?.operationalManagement||state.settings.defaultOperationalManagement||"Scalping";
+  const mgCfg=(state.settings.operationalManagements||{})[opMgmt]||{};
   document.getElementById("view-session").innerHTML=`
     <div class="grid grid-2">
       <div class="card">
@@ -354,12 +386,13 @@ function renderSession(){
           <div class="field"><label>Data</label><input type="date" name="date" value="${active?active.date:todayStr()}" ${active?"disabled":""} required></div>
           <div class="field"><label>Hora de início</label><input type="time" name="startTime" value="${active?active.startTime:new Date().toTimeString().slice(0,5)}" ${active?"disabled":""} required></div>
           <div class="field"><label>Ativo</label><select name="asset" ${active?"disabled":""}>${Object.values(state.assets).map(x=>`<option ${x.symbol===(active?.asset||defaultAsset)?"selected":""}>${esc(x.symbol)}</option>`).join("")}</select></div>
-          <div class="field"><label>Perfil de gerenciamento</label><select name="profile" ${active?"disabled":""}>${Object.keys(state.settings.lotRules).map(x=>`<option ${x===(active?.profile||profile)?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
-          <div class="field"><label>% de busca do dia</label><input type="number" name="searchPercent" min="0" step="0.1" value="${active?active.searchPercent:(state.settings.minDailySearchPercent??20)}" ${active?"disabled":""}></div>
+          <div class="field"><label>Gerenciamento operacional</label><select name="operationalManagement" ${active?"disabled":""}>${Object.keys(state.settings.operationalManagements||{}).map(x=>`<option ${x===(active?.operationalManagement||state.settings.defaultOperationalManagement||"Scalping")?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+          <div class="field"><label>Perfil financeiro / lote</label><select name="profile" ${active?"disabled":""}>${Object.keys(state.settings.lotRules).map(x=>`<option ${x===(active?.profile||profile)?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+          <div class="field"><label>% de busca do dia</label><input type="number" name="searchPercent" min="0" step="0.1" value="${active?active.searchPercent:(mgCfg.searchPercent??state.settings.minDailySearchPercent??20)}" ${active?"disabled":""}></div>
           <div class="field"><label>Busca do dia (US$)</label><input type="text" value="${money(bal*((active?.searchPercent??(state.settings.minDailySearchPercent??20))/100))}" readonly></div>
           <div class="field"><label>Lote sugerido</label><input type="text" value="${num(lotSuggestion(bal,active?.profile||profile).lot,2)}" readonly></div>
-          <div class="field"><label>Pontos de objetivo Take</label><input type="number" name="targetPoints" value="${active?.targetPoints??state.settings.dailyTargetPoints}" ${active?"disabled":""}></div>
-          <div class="field"><label>Pontos de Stop</label><input type="number" name="stopPoints" value="${active?.stopPoints??state.settings.dailyStopPoints}" ${active?"disabled":""}></div>
+          <div class="field"><label>Pontos de objetivo Take</label><input type="number" name="targetPoints" value="${active?.targetPoints??mgCfg.takePoints??state.settings.dailyTargetPoints}" ${active?"disabled":""}></div>
+          <div class="field"><label>Pontos de Stop</label><input type="number" name="stopPoints" value="${active?.stopPoints??mgCfg.stopPoints??state.settings.dailyStopPoints}" ${active?"disabled":""}></div>
           <div class="field full"><label>Estratégia / Setup / Contexto inicial <span class="note">(opcional)</span></label><textarea name="context" ${active?"disabled":""}>${esc(active?.context||"")}</textarea></div>
           <div class="actions full">${active?`<button type="button" class="btn danger" data-close-session="${active.id}">Encerrar sessão</button>`:`<button class="btn primary">Iniciar sessão</button>`}</div>
         </form>
@@ -369,6 +402,7 @@ function renderSession(){
         ${active?`
           <div class="stat-strip">
             <div><span class="kicker">Sessão</span><div class="v">${operationalSessionNumber(active.date,active.id)}</div></div>
+            <div><span class="kicker">Gerenciamento</span><div class="v">${esc(active.operationalManagement||"Scalping")}</div></div>
             <div><span class="kicker">Operações</span><div class="v">${t.count}</div></div>
             <div><span class="kicker">Pontos</span><div class="v">${num(t.points,0)}</div></div>
             <div><span class="kicker">Resultado</span><div class="v ${t.net>=0?'positive':'negative'}">${money(t.net)}</div></div>
@@ -389,7 +423,7 @@ function renderSession(){
     e.preventDefault();
     if(state.activeSessionId){toast("Já existe uma sessão aberta.");return;}
     const f=new FormData(form), date=f.get("date");
-    const item={id:uid(),date,startTime:f.get("startTime"),endTime:"",asset:f.get("asset"),profile:f.get("profile"),searchPercent:Number(f.get("searchPercent"))||20,targetPoints:Number(f.get("targetPoints"))||0,stopPoints:Number(f.get("stopPoints"))||0,context:f.get("context")||"",journal:"",status:"open",balanceBefore:calculatedAccountBalance(),createdAt:new Date().toISOString(),sessionNumber:state.sessions.filter(s=>s.date===date).length+1};
+    const item={id:uid(),date,startTime:f.get("startTime"),endTime:"",asset:f.get("asset"),operationalManagement:f.get("operationalManagement")||"Scalping",profile:f.get("profile"),searchPercent:Number(f.get("searchPercent"))||20,targetPoints:Number(f.get("targetPoints"))||0,stopPoints:Number(f.get("stopPoints"))||0,context:f.get("context")||"",journal:"",status:"open",balanceBefore:calculatedAccountBalance(),createdAt:new Date().toISOString(),sessionNumber:state.sessions.filter(s=>s.date===date).length+1};
     state.sessions.push(item); state.activeSessionId=item.id; save(); toast(`Sessão ${item.sessionNumber} iniciada.`); render();
   };
 }
@@ -740,7 +774,8 @@ function renderSettings(){
 
   const tabs=[
     ["geral","⚙️","Geral","Gerenciamento e parâmetros"],
-    ["projeto","🎯","Projeto","Meta principal e etapas"],
+    ["gerenciamentos","🎯","Gerenciamentos","Scalping, reversão e tendência"],
+    ["projeto","📌","Projeto","Meta principal e etapas"],
     ["lotes","📊","Perfis de lote","Escalas de gerenciamento"],
     ["capital","💵","Capital","Depósitos e saques"],
     ["ativos","📈","Ativos","Instrumentos operacionais"]
@@ -795,6 +830,56 @@ function renderSettingsTab(tab){
             </div>`}
         </div>
       </div>`;
+  }
+
+  if(tab==="gerenciamentos"){
+    const mg=state.settings.operationalManagements||{};
+    return `
+      <div class="card">
+        <div class="card-header">
+          <div><h2>Gerenciamentos operacionais</h2><p>Escolha o tipo de condução da sessão. Estes parâmetros são independentes do perfil financeiro de lote.</p></div>
+          <span class="pill blue">3 modalidades</span>
+        </div>
+        <div class="grid grid-3">
+          ${Object.entries(mg).map(([name,c])=>`
+            <div class="card nested-card">
+              <div class="card-header"><div><h3>${esc(name)}</h3><p>${name==="Scalping"?"Movimentos curtos e objetivos rápidos.":name==="Reversão"?"Operações baseadas em possível mudança de direção.":"Aproveitamento de continuidade do movimento direcional."}</p></div></div>
+              <form class="management-form" data-management="${esc(name)}">
+                <div class="field"><label>Busca diária (%)</label><input name="searchPercent" type="number" min="0.1" step="0.1" value="${c.searchPercent}"></div>
+                <div class="field"><label>Pontos mínimos</label><input name="minPoints" type="number" min="0" value="${c.minPoints}"></div>
+                <div class="field"><label>Pontos máximos</label><input name="maxPoints" type="number" min="0" value="${c.maxPoints}"></div>
+                <div class="field"><label>Take padrão (pts)</label><input name="takePoints" type="number" min="0" value="${c.takePoints}"></div>
+                <div class="field"><label>Stop padrão (pts)</label><input name="stopPoints" type="number" min="0" value="${c.stopPoints}"></div>
+                <div class="field"><label>Máx. operações</label><input name="maxOperations" type="number" min="1" value="${c.maxOperations}"></div>
+                <div class="field"><label>Risco / Retorno</label><input name="riskReward" type="number" min="0.1" step="0.1" value="${c.riskReward}"></div>
+                <div class="field"><label>Perda máxima diária (%)</label><input name="maxDailyLossPercent" type="number" min="0" step="0.1" value="${c.maxDailyLossPercent}"></div>
+                <div class="field"><label>Ativo permitido</label><select name="asset">${Object.keys(state.assets).map(a=>`<option>${esc(a)}</option>`).join("")}</select></div>
+                <div class="actions full"><button class="btn primary">Salvar ${esc(name)}</button></div>
+              </form>
+            </div>`).join("")}
+        </div>
+      </div>`;
+  }
+
+  if(tab==="gerenciamentos"){
+    document.querySelectorAll(".management-form").forEach(form=>{
+      form.onsubmit=e=>{
+        e.preventDefault();
+        const name=form.dataset.management, d=new FormData(form);
+        state.settings.operationalManagements[name]={
+          ...state.settings.operationalManagements[name],
+          searchPercent:Math.max(0.1,Number(d.get("searchPercent"))||20),
+          minPoints:Math.max(0,Number(d.get("minPoints"))||0),
+          maxPoints:Math.max(0,Number(d.get("maxPoints"))||0),
+          takePoints:Math.max(0,Number(d.get("takePoints"))||0),
+          stopPoints:Math.max(0,Number(d.get("stopPoints"))||0),
+          maxOperations:Math.max(1,Number(d.get("maxOperations"))||1),
+          riskReward:Math.max(0.1,Number(d.get("riskReward"))||1),
+          maxDailyLossPercent:Math.max(0,Number(d.get("maxDailyLossPercent"))||0)
+        };
+        save();toast(`${name} atualizado.`);render();
+      };
+    });
   }
 
   if(tab==="projeto"){

@@ -171,3 +171,22 @@ Restauradas as rotinas de Operações e Calculadora que foram removidas acidenta
 - Para sessões já realizadas, Saldo se Win/Saldo se Loss passa a mostrar somente o cenário compatível com o resultado real; o saldo real alcançado permanece visível.
 - O saldo atual continua baseado no resultado líquido efetivamente registrado nas operações. Isso evita descontar a comissão duas vezes quando o valor informado no lançamento vier do campo líquido do MT5.
 - Dashboard e Projeção recalculam o saldo antes de renderizar.
+
+
+## V2.0 — Gerenciamentos operacionais
+
+Nova camada separada do perfil financeiro/lote:
+- Scalping
+- Reversão
+- Continuação de tendência
+
+Cada modalidade possui parâmetros próprios e editáveis:
+- busca diária (%)
+- pontos mínimos e máximos
+- Take padrão
+- Stop padrão
+- máximo de operações
+- risco/retorno
+- perda máxima diária (%)
+
+A Sessão Operacional passa a registrar qual gerenciamento operacional foi selecionado, mantendo separado o perfil financeiro responsável pelo lote.
