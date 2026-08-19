@@ -215,3 +215,37 @@ Os valores são editáveis em Configurações → Gerenciamentos.
 - Dashboard agora usa seu próprio plano operacional calculado.
 - Sessão ativa calcula o plano usando o saldo inicial real daquela sessão.
 - Lançamento rápido usa o mesmo lote-base planejado e numeração de entrada do gerenciamento ativo.
+
+
+## V2.2 — Registro de operação simplificado
+
+A página Operações agora possui uma única opção de registro:
+- Data
+- Hora
+- Ativo
+- Direção
+- Resultado líquido (US$)
+- Comissão (US$)
+- Quantidade de lotes (opcional)
+- Pontos +/− (opcional)
+- Observação (opcional), orientando a informar preço de entrada/saída, contexto ou comentário relevante.
+
+O registro continua obrigatoriamente vinculado a uma sessão operacional aberta.
+
+Após salvar:
+- todos os dados ficam acessíveis;
+- a operação aparece no histórico;
+- há ação de editar;
+- lote e pontos podem permanecer vazios;
+- qualquer campo do registro pode ser alterado posteriormente.
+
+
+## V2.3 — Projeção proporcional automática
+
+- Tabelas de lote passam a começar em US$10, com níveis US$10, 25, 50, 75 e depois incrementos de US$25.
+- Projeção usa automaticamente o perfil de lote selecionado.
+- Metas secundárias deixam de depender de valores digitados manualmente.
+- São geradas automaticamente em progressão proporcional (geométrica) entre o saldo inicial e a meta principal.
+- Cada etapa informa crescimento percentual, busca diária, lote de referência, pontos de referência e quantidade estimada de sessões para atingir a etapa.
+- A projeção continua sendo recalculada conforme saldo, percentual de busca, ativo e perfil selecionado.
+- A quantidade de sessões/dias não define as metas; ela é apenas uma consequência calculada da projeção.

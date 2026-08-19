@@ -126,14 +126,18 @@ function buildDefaultLotRules(){
   const rows={};
   profiles.forEach(profile=>{
     rows[profile]=[];
-    for(let balance=100,i=0; balance<=5000; balance+=25,i++){
+    const balances=[10,25,50,75];
+    for(let balance=100;balance<=5000;balance+=25) balances.push(balance);
+    balances.forEach(balance=>{
+      // Keep the established profile progression; below US$100 the first profile lot is used.
+      const i=Math.max(0,Math.floor((balance-100)/25));
       let lot=0.01;
       if(profile==="Conservador") lot=0.01+i*0.01;
       if(profile==="Moderado") lot=0.03+i*0.01;
       if(profile==="Moderado 1") lot=0.05+i*0.01;
       if(profile==="Agressivo") lot=0.12 + Math.floor(i/2)*0.05 + (i%2)*0.03;
       rows[profile].push({balance,lot:Number(lot.toFixed(2))});
-    }
+    });
   });
   return rows;
 }
@@ -142,9 +146,9 @@ function normalizeLotRules(){
   state.settings.lotMinimum=Number(state.settings.lotMinimum)||0.01;
   if(!state.settings.lotRules) state.settings.lotRules={};
   Object.keys(defaults).forEach(profile=>{
-    if(!Array.isArray(state.settings.lotRules[profile]) || !state.settings.lotRules[profile].length){
-      state.settings.lotRules[profile]=defaults[profile];
-    }
+    const existing=Array.isArray(state.settings.lotRules[profile])?state.settings.lotRules[profile]:[];
+    const byBalance=new Map(existing.map(r=>[Number(r.balance),r]));
+    state.settings.lotRules[profile]=defaults[profile].map(r=>byBalance.has(r.balance)?byBalance.get(r):r);
   });
 }
 normalizeLotRules();
@@ -495,6 +499,7 @@ function ensureProjectionState(){
   if(p.secondaryCount===undefined)p.secondaryCount=5;
   if(!p.projectionPercent)p.projectionPercent=p.dailyPercent||30;
   if(!Array.isArray(p.secondaryTargets))p.secondaryTargets=[];
+  p.secondaryTargets=milestoneTargets(p.initialBalance,p.target,p.secondaryCount).map(x=>x.to);
   if(!Array.isArray(p.stageDeadlines))p.stageDeadlines=[];
   if(p.stageIndex===undefined)p.stageIndex=0;
   if(!p.projectionRowOverrides||typeof p.projectionRowOverrides!=="object")p.projectionRowOverrides={};
@@ -511,13 +516,19 @@ function projectionSession(p,profile,balance){
   return {dailyTarget,net:dailyTarget,lot,fees,grossRequired,points};
 }
 function milestoneTargets(initial,target,count=5,customTargets=[]){
-  initial=Number(initial)||0; target=Number(target)||0; count=Math.max(1,Math.floor(Number(count)||5));
+  initial=Number(initial)||0; target=Number(target)||0;
+  count=Math.max(1,Math.floor(Number(count)||5));
   if(target<=initial)return [];
+  // Secondary goals are generated automatically by proportional capital growth.
+  // The geometric progression keeps the percentage jump between levels balanced,
+  // rather than producing increasingly difficult equal-dollar jumps.
   const out=[]; let from=initial;
+  const ratio=Math.pow(target/initial,1/count);
   for(let i=0;i<count;i++){
-    let to=Number(customTargets[i]);
-    if(!(to>from && to<=target)) to=initial+(target-initial)*(i+1)/count;
-    if(i===count-1)to=target;
+    let to=(i===count-1)?target:initial*Math.pow(ratio,i+1);
+    to=Number(to.toFixed(2));
+    if(to<=from)to=Number((from+(target-from)/(count-i)).toFixed(2));
+    if(to>target)to=target;
     out.push({from,to});
     from=to;
   }
@@ -623,14 +634,14 @@ function renderProjection(){
         <div class="field"><label>Busca diária para projeção (%)</label><input name="projectionPercent" type="number" min="0.1" step="0.1" value="${projectionPct}" required></div>
         <div class="field"><label>Perfil / lote operacional</label><select name="profile">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===p.activeProfile?'selected':''}>${esc(x)}</option>`).join("")}</select></div>
         <div class="field"><label>Ativo da projeção</label><select name="asset">${Object.values(state.assets).map(a=>`<option ${a.symbol===p.asset?'selected':''}>${esc(a.symbol)}</option>`).join("")}</select></div>
-        <div class="field"><label>Nº de metas secundárias</label><input name="secondaryCount" type="number" min="1" max="20" value="${p.secondaryCount}"></div>
+        <div class="field"><label>Metas secundárias automáticas</label><input type="text" value="${p.secondaryCount} níveis proporcionais" readonly></div>
         <div class="actions full"><button class="btn primary">Atualizar projeção</button></div>
       </form>
     </div>
 
     <div class="card section-space">
-      <div class="card-header"><div><h2>Metas secundárias</h2><p>Objetivos intermediários gerados a partir da meta principal, busca diária e gerenciamento selecionados. O usuário pode ajustar o valor e o prazo.</p></div><span class="pill green">${stages.length} etapas</span></div>
-      ${stages.length?`<div class="table-wrap"><table><thead><tr><th>Etapa</th><th>De</th><th>Objetivo US$</th><th>Busca %</th><th>Lote ref.</th><th>Pontos ref.</th><th>Período previsto</th><th>Status</th><th>Ação</th></tr></thead><tbody>
+      <div class="card-header"><div><h2>Metas secundárias automáticas</h2><p>Os níveis são calculados proporcionalmente entre o saldo inicial e a meta principal. Não é necessário informar valores manualmente.</p></div><span class="pill green">${stages.length} etapas</span></div>
+      ${stages.length?`<div class="table-wrap"><table><thead><tr><th>Etapa</th><th>De</th><th>Objetivo US$</th><th>Crescimento</th><th>Busca %</th><th>Lote ref.</th><th>Pontos ref.</th><th>Sessões estimadas</th><th>Status</th></tr></thead><tbody>
       ${stages.map((m,i)=>{
         const x=projectionSession(p,p.activeProfile,m.from);
         const estimated=projectSessionsToTarget(p,p.activeProfile,m.from,m.to);
@@ -641,10 +652,10 @@ function renderProjection(){
         const status=done?"CONCLUÍDA":manualAdvanced?"AVANÇADA":current?"ATUAL":"PRÓXIMA";
         return `<tr>
           <td>${i+1}</td><td>${money(m.from)}</td><td><strong>${money(m.to)}</strong></td>
-          <td>${num(projectionPct,1)}%</td><td>${num(x.lot,2)}</td><td>${num(x.points,0)}</td>
-          <td>${deadline?`${deadline} sessões · ~${Math.ceil(deadline/5)} sem.`:"—"}</td>
+          <td>${num(m.from?((m.to-m.from)/m.from*100):0,1)}%</td><td>${num(projectionPct,1)}%</td><td>${num(x.lot,2)}</td><td>${num(x.points,0)}</td>
+          <td>${estimated===null?"—":estimated}</td>
           <td><span class="pill ${status==="CONCLUÍDA"||status==="AVANÇADA"?"green":current?"amber":""}">${status}</span></td>
-          <td><button class="btn secondary" data-edit-stage="${i}">Editar</button>${current&&i<stages.length-1?` <button class="btn primary" data-advance-stage="${i}">Avançar etapa</button>`:""}</td>
+          <td>${current&&i<stages.length-1?`<button class="btn primary" data-advance-stage="${i}">Avançar etapa</button>`:"—"}</td>
         </tr>`;
       }).join("")}</tbody></table></div>`:`<div class="empty">Defina uma meta principal maior que o saldo inicial.</div>`}
     </div>
@@ -684,13 +695,13 @@ function renderProjection(){
   const form=document.getElementById("projection-controls");
   if(form)form.onsubmit=e=>{
     e.preventDefault();const d=new FormData(form);
-    const count=Math.max(1,Math.min(20,Number(d.get("secondaryCount"))||5));
+    const count=5;
     p.projectionPercent=Math.max(0.1,Number(d.get("projectionPercent"))||30);
     p.dailyPercent=p.projectionPercent;
     p.activeProfile=d.get("profile");p.asset=d.get("asset");p.secondaryCount=count;
     if(p.stageIndex>=count)p.stageIndex=count-1;
-    // Regenerate invalid/missing targets while preserving user-defined targets.
-    p.secondaryTargets=milestoneTargets(p.initialBalance,p.target,count,p.secondaryTargets).map(x=>x.to);
+    // Always regenerate the secondary goals from the current project parameters.
+    p.secondaryTargets=milestoneTargets(p.initialBalance,p.target,count).map(x=>x.to);
     save();toast("Projeção recalculada.");render();
   };
 }
@@ -975,9 +986,9 @@ function renderSettingsTab(tab){
           <div><h2>Tabela de gerenciamento por lote</h2><p>Cada perfil possui sua própria tabela. O valor usado é o maior nível que o saldo atual já alcançou.</p></div>
           <select id="lot-profile-select">${Object.keys(state.settings.lotRules).map(x=>`<option ${x===profile?"selected":""}>${esc(x)}</option>`).join("")}</select>
         </div>
-        <div class="callout"><strong>Regra abaixo de US$100</strong><span class="note">Abaixo do primeiro nível, a Nexora mostra "capital abaixo do primeiro nível" e não sugere lote automaticamente.</span></div>
+        <div class="callout"><strong>Escala desde US$10</strong><span class="note">A tabela agora começa em US$10 e o lote sugerido passa a acompanhar também saldos pequenos.</span></div>
         <div class="table-wrap section-space"><table><thead><tr><th>Capital (US$)</th><th>Lote sugerido</th><th>Ação</th></tr></thead><tbody>
-          ${rules.slice(0,80).map((r,i)=>`<tr><td><input class="inline-edit lot-balance" data-i="${i}" type="number" step="25" value="${r.balance}"></td><td><input class="inline-edit lot-value" data-i="${i}" type="number" min="0.01" step="0.01" value="${r.lot.toFixed(2)}"></td><td><button class="btn secondary" data-save-lot-row="${i}">Salvar</button></td></tr>`).join("")}
+          ${rules.map((r,i)=>`<tr><td><input class="inline-edit lot-balance" data-i="${i}" type="number" step="25" value="${r.balance}"></td><td><input class="inline-edit lot-value" data-i="${i}" type="number" min="0.01" step="0.01" value="${r.lot.toFixed(2)}"></td><td><button class="btn secondary" data-save-lot-row="${i}">Salvar</button></td></tr>`).join("")}
         </tbody></table></div>
         <div class="actions"><button class="btn primary" id="save-lot-table">Salvar tabela ${esc(profile)}</button></div>
       </div>`;
@@ -1188,13 +1199,16 @@ document.addEventListener("click",e=>{
   const editO=e.target.closest("[data-edit-op]");
   if(editO){
     const o=state.operations.find(x=>x.id===editO.dataset.editOp); if(!o)return;
-    const choices=["Data","Horário","Ativo","Direção","Lote","Pontos","Resultado líquido MT5","Comissão","Entrada","Saída","Observação"];
+    const choices=["Data","Horário","Ativo","Direção","Quantidade de lotes","Pontos (+ / −)","Resultado líquido","Comissão","Observação"];
     const choice=prompt("O que deseja editar?\n\n"+choices.map((x,i)=>`${i+1}. ${x}`).join("\n"),"1");
     const i=Number(choice)-1;if(i<0||i>=choices.length)return;
-    const fields=["date","time","asset","direction","lot","points","net","commission","entry","exit","note"];
+    const fields=["date","time","asset","direction","lot","points","net","commission","note"];
     const field=fields[i];
     const value=prompt(choices[i]+":",String(o[field]??""));if(value===null)return;
-    if(["direction","lot","points","net","commission","entry","exit"].includes(field))o[field]=Number(value)||0;else o[field]=value;
+    if(["direction","lot","points","net","commission"].includes(field)){
+      if((field==="lot"||field==="points") && String(value).trim()==="") o[field]=null;
+      else o[field]=Number(value)||0;
+    }else o[field]=value;
     const aa=state.assets[o.asset]||asset();
     o.gross=pointsToMoney(Number(o.points)||0,Number(o.lot)||0,aa);o.executionCost=o.gross-(Number(o.net)||0);
     rebuildCurrentBalance();
@@ -1286,75 +1300,99 @@ nav(); render();function renderSessionsTable(){
 
 function renderOperations(){
   const open=state.activeSessionId?state.sessions.find(s=>s.id===state.activeSessionId&&s.status==="open"):null;
-  const a=asset();
   const disabled=!open;
   const last=state.operations[0];
   const openMgmt=open?.operationalManagement||state.settings.defaultOperationalManagement||"Scalping";
   const openPlan=open?tradePlan(Number(open.balanceBefore)||calculatedAccountBalance(),openMgmt,open.profile||state.settings.defaultProfile,open.asset||state.settings.defaultAsset,open.searchPercent):null;
+  const suggestedLot=openPlan?.baseLot??lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot;
+  const suggestedCommission=commission(suggestedLot,state.assets[open?.asset||state.settings.defaultAsset]||asset()).toFixed(2);
+
   document.getElementById("view-operations").innerHTML=`
-    <div class="callout ${disabled?'':'green'}"><strong>${disabled?"Nenhuma sessão operacional aberta.":"Sessão ativa: "+operationalSessionNumber(open.date,open.id)+" · "+open.date}</strong><span class="note">${disabled?"Abra uma sessão operacional antes de registrar qualquer operação.":"Todos os lançamentos serão vinculados automaticamente à sessão ativa."}</span></div>
-    <div class="grid grid-2 section-space">
-      <div class="card">
-        <div class="card-header"><div><h2>Lançamento detalhado</h2><p>Entrada + saída + resultado líquido do MT5.</p></div></div>
-        <form id="op-detailed" class="form-grid">
-          <div class="field"><label>Data</label><input type="date" name="date" value="${open?.date||todayStr()}" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Horário</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Ativo</label><select name="asset" ${disabled?"disabled":""}>${Object.values(state.assets).map(x=>`<option ${x.symbol===(open?.asset||state.settings.defaultAsset)?"selected":""}>${x.symbol}</option>`).join("")}</select></div>
-          <div class="field"><label>Direção</label><select name="direction" ${disabled?"disabled":""}><option value="1">BUY</option><option value="-1">SELL</option></select></div>
-          <div class="field"><label>Nº da entrada</label><input type="number" min="1" name="entryNumber" value="${open?((state.operations.filter(o=>o.sessionId===open.id).length)+1):1}" ${disabled?"disabled":""}></div>
-          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(openPlan?.baseLot??lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,2)}" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Entrada</label><input type="number" step="0.01" name="entry" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Saída</label><input type="number" step="0.01" name="exit" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Resultado líquido MT5 (US$)</label><input type="number" step="0.01" name="net" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Comissão MT5 (US$)</label><input type="number" step="0.01" name="commission" value="${commission(openPlan?.baseLot??lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,a).toFixed(2)}" ${disabled?"disabled":""}></div>
-          <div class="field full"><label>Observação</label><textarea name="note" ${disabled?"disabled":""}></textarea></div>
-          <div class="actions full"><button class="btn primary" ${disabled?"disabled":""}>Registrar operação</button></div>
-        </form>
-      </div>
-      <div class="card">
-        <div class="card-header"><div><h2>Lançamento rápido</h2><p>Quando você já tem os dados finais do MT5.</p></div></div>
-        <form id="op-quick" class="form-grid">
-          <div class="field"><label>Data</label><input type="date" name="date" value="${open?.date||todayStr()}" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Horário</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Ativo</label><select name="asset" ${disabled?"disabled":""}>${Object.values(state.assets).map(x=>`<option ${x.symbol===(open?.asset||state.settings.defaultAsset)?"selected":""}>${x.symbol}</option>`).join("")}</select></div>
-          <div class="field"><label>Direção</label><select name="direction" ${disabled?"disabled":""}><option value="1">BUY</option><option value="-1">SELL</option></select></div>
-          <div class="field"><label>Nº da entrada</label><input type="number" min="1" name="entryNumber" value="${open?((state.operations.filter(o=>o.sessionId===open.id).length)+1):1}" ${disabled?"disabled":""}></div>
-          <div class="field"><label>Lote</label><input type="number" step="0.01" name="lot" value="${num(openPlan?.baseLot??lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile).lot,2)}" ${disabled?"disabled":""}></div>
-          <div class="field"><label>Pontos Nexora</label><input type="number" step="1" name="points" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Resultado líquido MT5 (US$)</label><input type="number" step="0.01" name="net" ${disabled?"disabled":""} required></div>
-          <div class="field"><label>Comissão (US$)</label><input type="number" step="0.01" name="commission" ${disabled?"disabled":""}></div>
-          <div class="field full"><label>Observação</label><textarea name="note" ${disabled?"disabled":""}></textarea></div>
-          <div class="actions full"><button class="btn primary" ${disabled?"disabled":""}>Registrar lançamento rápido</button></div>
-        </form>
-      </div>
+    <div class="callout ${disabled?'':'green'}">
+      <strong>${disabled?"Nenhuma sessão operacional aberta.":"Sessão ativa: "+operationalSessionNumber(open.date,open.id)+" · "+open.date}</strong>
+      <span class="note">${disabled?"Abra uma sessão operacional antes de registrar uma operação.":"Registre a operação de forma simples. Os dados ficarão vinculados automaticamente à sessão."}</span>
     </div>
+
     <div class="card section-space">
-      <div class="card-header"><div><h2>Última operação registrada</h2><p>Resumo rápido da última execução.</p></div></div>
+      <div class="card-header">
+        <div><h2>Registrar operação</h2><p>Preencha somente o essencial. Lote e pontos são opcionais.</p></div>
+        ${open?`<span class="pill blue">${esc(openMgmt)}</span>`:""}
+      </div>
+      <form id="op-form" class="form-grid">
+        <div class="field"><label>Data</label><input type="date" name="date" value="${open?.date||todayStr()}" ${disabled?"disabled":""} required></div>
+        <div class="field"><label>Hora</label><input type="time" name="time" value="${new Date().toTimeString().slice(0,5)}" ${disabled?"disabled":""} required></div>
+        <div class="field"><label>Ativo</label><select name="asset" ${disabled?"disabled":""} required>${Object.values(state.assets).map(x=>`<option ${x.symbol===(open?.asset||state.settings.defaultAsset)?"selected":""}>${x.symbol}</option>`).join("")}</select></div>
+        <div class="field"><label>Direção</label><select name="direction" ${disabled?"disabled":""} required><option value="1">BUY</option><option value="-1">SELL</option></select></div>
+        <div class="field"><label>Resultado líquido (US$)</label><input type="number" step="0.01" name="net" ${disabled?"disabled":""} required placeholder="Ex.: 4.25"></div>
+        <div class="field"><label>Comissão (US$)</label><input type="number" step="0.01" name="commission" value="${suggestedCommission}" ${disabled?"disabled":""} required></div>
+        <div class="field"><label>Quantidade de lotes <span class="note">(opcional)</span></label><input type="number" min="0.01" step="0.01" name="lot" value="${openPlan?num(suggestedLot,2):""}" ${disabled?"disabled":""} placeholder="Ex.: 0.01"></div>
+        <div class="field"><label>Pontos + / − <span class="note">(opcional)</span></label><input type="number" step="1" name="points" ${disabled?"disabled":""} placeholder="Ex.: +200 ou -100"></div>
+        <div class="field full"><label>Observação <span class="note">(opcional)</span></label><textarea name="note" ${disabled?"disabled":""} placeholder="Informe o preço de entrada e saída, contexto da operação ou qualquer comentário relevante."></textarea></div>
+        <div class="actions full"><button class="btn primary" ${disabled?"disabled":""}>Registrar operação</button></div>
+      </form>
+    </div>
+
+    ${openPlan?`<div class="card section-space">
+      <div class="card-header"><div><h2>Plano da sessão</h2><p>Referência para esta sessão; não é obrigatório preencher todos os campos da operação.</p></div></div>
+      <div class="stat-strip">
+        <div><span class="kicker">Lote base</span><div class="v">${num(openPlan.baseLot,2)}</div></div>
+        <div><span class="kicker">Máx. entradas</span><div class="v">${openPlan.maxEntries}</div></div>
+        <div><span class="kicker">Exposição máxima</span><div class="v">${num(openPlan.maxTotalLot,2)}</div></div>
+        <div><span class="kicker">Meta líquida</span><div class="v">${money(openPlan.netTarget)}</div></div>
+      </div>
+    </div>`:""}
+
+    <div class="card section-space">
+      <div class="card-header"><div><h2>Última operação registrada</h2><p>Acesse a sessão operacional para visualizar e editar todos os dados.</p></div></div>
       ${last?renderLastOperation(last):`<div class="empty">Nenhuma operação registrada.</div>`}
     </div>`;
-  const detailed=document.getElementById("op-detailed");
-  if(detailed) detailed.onsubmit=e=>{
-    e.preventDefault();const f=new FormData(e.target),aa=state.assets[f.get("asset")],points=pointsFromPrices(f.get("entry"),f.get("exit"),Number(f.get("direction")),aa),lot=Number(f.get("lot")),net=Number(f.get("net")),comm=Number(f.get("commission"))||0,gross=pointsToMoney(points,lot,aa);
-    const entryNumber=Math.max(1,Number(f.get("entryNumber"))||1);
-    if(openPlan && entryNumber>openPlan.maxEntries){toast(`Limite de ${openPlan.maxEntries} entradas atingido para ${openMgmt}.`);return;}
-    const used=state.operations.filter(o=>o.sessionId===open.id).reduce((s,o)=>s+(Number(o.lot)||0),0);
-    if(openPlan && used+lot>openPlan.maxTotalLot+1e-9){toast(`Exposição máxima da operação: ${num(openPlan.maxTotalLot,2)} lote.`);return;}
-    addOperation({date:f.get("date"),time:f.get("time"),sessionId:open.id,asset:f.get("asset"),direction:Number(f.get("direction")),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:Number(f.get("entry")),exit:Number(f.get("exit")),strategy:open.context||"",note:f.get("note"),mode:"detailed",entryNumber});
-  };
-  const quick=document.getElementById("op-quick");
-  if(quick) quick.onsubmit=e=>{
-    e.preventDefault();const f=new FormData(e.target),lot=Number(f.get("lot")),aa=state.assets[f.get("asset")],points=Number(f.get("points")),net=Number(f.get("net")),comm=Number(f.get("commission"))||0,gross=pointsToMoney(points,lot,aa);
-    const entryNumber=Math.max(1,Number(f.get("entryNumber"))||1);
-    if(openPlan && entryNumber>openPlan.maxEntries){toast(`Limite de ${openPlan.maxEntries} entradas atingido para ${openMgmt}.`);return;}
-    const used=state.operations.filter(o=>o.sessionId===open.id).reduce((s,o)=>s+(Number(o.lot)||0),0);
-    if(openPlan && used+lot>openPlan.maxTotalLot+1e-9){toast(`Exposição máxima da operação: ${num(openPlan.maxTotalLot,2)} lote.`);return;}
-    addOperation({date:f.get("date"),time:f.get("time"),sessionId:open.id,asset:f.get("asset"),direction:Number(f.get("direction")),lot,points,gross,net,commission:comm,executionCost:gross-net,entry:null,exit:null,strategy:open.context||"",note:f.get("note"),mode:"quick",entryNumber});
+
+  const form=document.getElementById("op-form");
+  if(form) form.onsubmit=e=>{
+    e.preventDefault();
+    if(!open){toast("Abra uma sessão operacional antes de registrar a operação.");return;}
+    const f=new FormData(e.target);
+    const aa=state.assets[f.get("asset")]||asset();
+    const lotRaw=String(f.get("lot")||"").trim();
+    const pointsRaw=String(f.get("points")||"").trim();
+    const lot=lotRaw===""?null:Number(lotRaw);
+    const points=pointsRaw===""?null:Number(pointsRaw);
+    const net=Number(f.get("net"))||0;
+    const comm=Number(f.get("commission"))||0;
+    if(lot!==null && (!Number.isFinite(lot)||lot<=0)){toast("Quantidade de lotes inválida.");return;}
+    if(points!==null && !Number.isFinite(points)){toast("Quantidade de pontos inválida.");return;}
+
+    const entryNumber=state.operations.filter(o=>o.sessionId===open.id).length+1;
+    const used=state.operations.filter(o=>o.sessionId===open.id).reduce((sum,o)=>sum+(Number(o.lot)||0),0);
+    const effectiveLot=lot??0;
+    if(openPlan && effectiveLot>0){
+      if(entryNumber>openPlan.maxEntries){toast(`Limite de ${openPlan.maxEntries} entradas atingido para ${openMgmt}.`);return;}
+      if(used+effectiveLot>openPlan.maxTotalLot+1e-9){toast(`Exposição máxima da operação: ${num(openPlan.maxTotalLot,2)} lote.`);return;}
+    }
+
+    const gross=points!==null && effectiveLot>0?pointsToMoney(points,effectiveLot,aa):null;
+    addOperation({
+      date:f.get("date"),time:f.get("time"),sessionId:open.id,asset:f.get("asset"),
+      direction:Number(f.get("direction")),lot,points,gross,net,commission:comm,
+      executionCost:gross===null?null:gross-net,entry:null,exit:null,
+      strategy:open.context||"",note:f.get("note")||"",mode:"simple",entryNumber
+    });
   };
 }
 function renderLastOperation(o){
   const s=state.sessions.find(x=>x.id===o.sessionId), bal=Number(o.balanceBeforeOperation)||0;
   const pctAdd=bal?Number(o.net)/bal*100:0;
-  return `<div class="table-wrap"><table><thead><tr><th>Data da operação</th><th>Nº Sessão</th><th>Ativo</th><th>Direção</th><th>Lote</th><th>Pontos</th><th>Lucro/Perda</th><th>% saldo</th></tr></thead><tbody><tr><td>${o.date} ${o.time||""}</td><td>${s?operationalSessionNumber(s.date,s.id):"—"}</td><td>${esc(o.asset)}</td><td>${o.direction===1?"BUY":"SELL"}</td><td>${num(o.lot,2)}</td><td>${num(o.points,0)}</td><td class="${o.net>=0?'positive':'negative'}">${money(o.net)}</td><td class="${pctAdd>=0?'positive':'negative'}">${pct(pctAdd)}</td></tr></tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr>
+    <th>Data</th><th>Hora</th><th>Sessão</th><th>Ativo</th><th>Direção</th><th>Lote</th><th>Pontos</th><th>Líquido</th><th>Comissão</th><th>% saldo</th>
+  </tr></thead><tbody><tr>
+    <td>${o.date||"—"}</td><td>${o.time||"—"}</td><td>${s?operationalSessionNumber(s.date,s.id):"—"}</td>
+    <td>${esc(o.asset||"—")}</td><td>${o.direction===1?"BUY":"SELL"}</td>
+    <td>${o.lot==null?"—":num(o.lot,2)}</td><td>${o.points==null?"—":num(o.points,0)}</td>
+    <td class="${o.net>=0?'positive':'negative'}">${money(o.net)}</td><td>${money(o.commission||0)}</td>
+    <td class="${pctAdd>=0?'positive':'negative'}">${pct(pctAdd)}</td>
+  </tr></tbody></table></div>
+  ${o.note?`<div class="callout section-space"><strong>Observação</strong><span class="note">${esc(o.note)}</span></div>`:""}
+  <div class="actions section-space"><button class="btn secondary" data-edit-op="${o.id}">Editar operação</button></div>`;
 }
 function addOperation(o){
   if(!o.sessionId){toast('Abra uma sessão antes de registrar a operação.');return;}
@@ -1365,7 +1403,7 @@ function addOperation(o){
 }
 function renderOpsTable(){
   if(!state.operations.length)return `<div class="empty">Nenhuma operação registrada.</div>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Sessão</th><th>Ativo</th><th>Dir.</th><th>Lote</th><th>Pontos</th><th>Líquido MT5</th></tr></thead><tbody>${state.operations.slice(0,100).map(o=>{const s=state.sessions.find(x=>x.id===o.sessionId);return `<tr><td>${o.date} ${o.time||""}</td><td>${s?operationalSessionNumber(s.date,s.id):"—"}</td><td>${esc(o.asset)}</td><td>${o.direction===1?"BUY":"SELL"}</td><td>${num(o.lot,2)}</td><td>${num(o.points,0)}</td><td class="${o.net>=0?'positive':'negative'}">${money(o.net)}</td></tr>`}).join("")}</tbody></table></div><p class="note">A edição das operações é feita exclusivamente em Sessão operacional.</p>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Sessão</th><th>Ativo</th><th>Dir.</th><th>Lote</th><th>Pontos</th><th>Líquido</th><th>Comissão</th><th>Ação</th></tr></thead><tbody>${state.operations.slice(0,100).map(o=>{const s=state.sessions.find(x=>x.id===o.sessionId);return `<tr><td>${o.date} ${o.time||""}</td><td>${s?operationalSessionNumber(s.date,s.id):"—"}</td><td>${esc(o.asset)}</td><td>${o.direction===1?"BUY":"SELL"}</td><td>${o.lot==null?"—":num(o.lot,2)}</td><td>${o.points==null?"—":num(o.points,0)}</td><td class="${o.net>=0?'positive':'negative'}">${money(o.net)}</td><td>${money(o.commission||0)}</td><td><button class="btn secondary" data-edit-op="${o.id}">Editar</button></td></tr>`}).join("")}</tbody></table></div><p class="note">Todos os campos da operação podem ser editados posteriormente em Sessão Operacional.</p>`;
 }
 
 
