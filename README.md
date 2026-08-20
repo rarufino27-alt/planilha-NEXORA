@@ -353,3 +353,13 @@ Corrigida a normalização das tabelas de lote para aceitar e limpar registros a
 - Removida a antiga barra de tabs da página de Configurações.
 - Página de Configurações passa a mostrar somente o conteúdo da seção escolhida.
 - Desktop preserva o layout profissional existente.
+
+
+## V3.3 — PWA / Instalação como aplicativo
+
+- Adicionado Web App Manifest para instalar o Gerenciamento NEXORA como aplicativo no Windows, Android e outros ambientes compatíveis.
+- Logo NEXORA fornecida pelo projeto foi convertida em ícones 192px, 512px, maskable, Apple Touch Icon e favicon.
+- Adicionado Service Worker para permitir cache do app shell e melhor comportamento quando a aplicação já foi carregada.
+- O nome instalado passa a ser `Gerenciamento NEXORA` e o nome curto `NEXORA`.
+- A interface desktop continua sendo a principal experiência; o layout mobile responsivo permanece disponível.
+- A instalação via navegador exige publicação em HTTPS, como GitHub Pages.

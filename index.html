@@ -79,5 +79,18 @@
 
   <div id="toast" class="toast"></div>
   <script src="app.js"></script>
+
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  window.__nexoraInstallPrompt = event;
+});
+</script>
+
 </body>
 </html>
