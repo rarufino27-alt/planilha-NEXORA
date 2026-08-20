@@ -291,3 +291,15 @@ Corrigida a normalização das tabelas de lote para aceitar e limpar registros a
 - Sessão Operacional passa a usar exatamente os pontos de referência calculados pela projeção do dia, considerando saldo, busca, gerenciamento, perfil, lote e custos.
 - Títulos das páginas foram profissionalizados.
 - Adicionados modos claro e escuro, com preferência persistida no navegador.
+
+
+## V2.7 — Responsive híbrido / WebView
+
+- Corrigido o comportamento em celulares e WebViews, incluindo wrappers como AppsGeyser.
+- Desativado o text autosizing que fazia títulos e componentes crescerem desproporcionalmente.
+- Menu lateral vira drawer no celular, com abertura pelo botão ☰ e fechamento ao selecionar uma página.
+- Conteúdo passa a ocupar 100% da largura do telefone.
+- Grids, cards, formulários, gráficos e indicadores foram adaptados para telas pequenas.
+- Tabelas permanecem horizontalmente roláveis quando a quantidade de colunas exige isso.
+- Dashboard, Projeções, Sessão Operacional e Configurações recebem layout mobile específico.
+- Mantido o menu lateral completo no celular; não há mais uma barra lateral estreita e inutilizável ocupando parte da tela.
