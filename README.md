@@ -312,3 +312,13 @@ Corrigida a normalização das tabelas de lote para aceitar e limpar registros a
 - O conteúdo principal inicia imediatamente após a área segura do dispositivo, sem o grande espaço vazio causado pela altura do menu.
 - Aplicada compatibilidade com `100dvh` e safe-area do Android.
 - Mantido o mesmo comportamento do navegador/desktop.
+
+
+## V2.9 — Menu hamburger no APK
+
+- Corrigido o menu que não tinha acionador visível no APK/WebView.
+- Adicionado botão hambúrguer `☰` no topo do aplicativo.
+- O botão alterna para `×` enquanto o menu estiver aberto.
+- Selecionar uma página fecha automaticamente o menu.
+- Tocar fora do menu também fecha o drawer.
+- O menu desktop continua com o controle de recolher/expandir.

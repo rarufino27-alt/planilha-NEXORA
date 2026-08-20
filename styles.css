@@ -507,3 +507,36 @@ html[data-theme="dark"] .mobile-menu-btn{background:#102642;border-color:#294667
     padding-top:calc(12px + env(safe-area-inset-top, 0px))!important;
   }
 }
+
+/* Nexora V2.9 — hamburger navigation for APK/WebView */
+.mobile-menu-btn{
+  display:none;
+  flex:0 0 42px;
+  width:42px;
+  height:42px;
+  margin:0;
+  padding:0;
+  border:1px solid #c9d8eb;
+  border-radius:11px;
+  background:#ffffff;
+  color:#082b63;
+  font-size:24px;
+  font-weight:800;
+  line-height:42px;
+  text-align:center;
+  cursor:pointer;
+  box-shadow:0 5px 15px rgba(9,44,94,.12);
+  -webkit-tap-highlight-color:transparent;
+}
+@media(max-width:900px){
+  .mobile-menu-btn{display:block!important;position:relative!important;z-index:1002!important}
+  .topbar{display:flex!important;flex-direction:row!important;align-items:center!important}
+  .topbar-title{flex:1;min-width:0}
+  .topbar-title h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  html[data-theme="dark"] .mobile-menu-btn{
+    background:#102642;border-color:#315477;color:#fff;
+  }
+}
+@media(max-width:480px){
+  .mobile-menu-btn{width:40px;height:40px;flex-basis:40px;font-size:22px;line-height:40px}
+}

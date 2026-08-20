@@ -372,19 +372,56 @@ function render(){
 
 function nav(){
   document.querySelectorAll("[data-view]").forEach(el=>el.onclick=()=>{
-    currentView=el.dataset.view; render();
-    if(document.body.classList.contains("sidebar-collapsed") && window.innerWidth<900)
-      document.body.classList.remove("sidebar-collapsed");
+    currentView=el.dataset.view;
+    render();
+    if(window.innerWidth<901) closeMobileMenu();
   });
-  document.querySelectorAll("[data-view-target]").forEach(el=>el.onclick=()=>{currentView=el.dataset.viewTarget;render()});
-  const toggle=document.getElementById("sidebar-toggle");
-  if(toggle)toggle.onclick=()=>{
+  document.querySelectorAll("[data-view-target]").forEach(el=>el.onclick=()=>{
+    currentView=el.dataset.viewTarget;
+    render();
+    if(window.innerWidth<901) closeMobileMenu();
+  });
+
+  const desktopToggle=document.getElementById("sidebar-toggle");
+  if(desktopToggle)desktopToggle.onclick=()=>{
+    if(window.innerWidth<901){
+      closeMobileMenu();
+      return;
+    }
     document.body.classList.toggle("sidebar-collapsed");
     const collapsed=document.body.classList.contains("sidebar-collapsed");
-    toggle.textContent=collapsed?"›":"‹";
-    toggle.title=collapsed?"Expandir menu":"Recolher menu";
+    desktopToggle.textContent=collapsed?"›":"‹";
+    desktopToggle.title=collapsed?"Expandir menu":"Recolher menu";
   };
+
+  const mobileBtn=document.getElementById("mobile-menu-btn");
+  if(mobileBtn)mobileBtn.onclick=()=>{
+    const open=document.body.classList.toggle("mobile-menu-open");
+    mobileBtn.setAttribute("aria-expanded",open?"true":"false");
+    mobileBtn.setAttribute("aria-label",open?"Fechar menu":"Abrir menu");
+    mobileBtn.textContent=open?"×":"☰";
+  };
+
+  // Fecha o drawer ao tocar fora dele.
+  document.addEventListener("click",e=>{
+    if(window.innerWidth<901 &&
+       document.body.classList.contains("mobile-menu-open") &&
+       !e.target.closest(".sidebar") &&
+       !e.target.closest("#mobile-menu-btn")){
+      closeMobileMenu();
+    }
+  });
+
   setupTheme();
+}
+function closeMobileMenu(){
+  document.body.classList.remove("mobile-menu-open");
+  const b=document.getElementById("mobile-menu-btn");
+  if(b){
+    b.textContent="☰";
+    b.setAttribute("aria-expanded","false");
+    b.setAttribute("aria-label","Abrir menu");
+  }
 }
 function cardMetric(label,value,sub="",cls=""){
   return `<div class="card metric"><div class="label">${label}</div><div class="value ${cls}">${value}</div><div class="sub">${sub}</div></div>`;
