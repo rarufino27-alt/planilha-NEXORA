@@ -322,3 +322,13 @@ Corrigida a normalização das tabelas de lote para aceitar e limpar registros a
 - Selecionar uma página fecha automaticamente o menu.
 - Tocar fora do menu também fecha o drawer.
 - O menu desktop continua com o controle de recolher/expandir.
+
+
+## V3.0 — Design Mobile Minimalista
+
+- Criada uma camada visual exclusiva para telas até 900px.
+- Desktop permanece utilizando o design completo existente.
+- Mobile ganhou hierarquia visual focada em saldo, busca diária, lote, pontos e saldo projetado.
+- Reduzidos textos e elementos decorativos sem remover informações funcionais.
+- Cards, projeção diária, indicadores, formulários e tabelas foram refinados para toque e leitura rápida.
+- Mantido o menu hambúrguer da V2.9.

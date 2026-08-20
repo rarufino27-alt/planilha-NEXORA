@@ -540,3 +540,267 @@ html[data-theme="dark"] .mobile-menu-btn{background:#102642;border-color:#294667
 @media(max-width:480px){
   .mobile-menu-btn{width:40px;height:40px;flex-basis:40px;font-size:22px;line-height:40px}
 }
+
+/* =========================================================
+   GERENCIAMENTO NEXORA — V3.0
+   Mobile / APK Minimal Skin
+   Desktop remains on the existing design.
+   ========================================================= */
+@media(max-width:900px){
+  body{
+    background:#f4f7fb!important;
+    color:#10213d;
+    font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  html[data-theme="dark"] body{
+    background:#071322!important;
+    color:#e7effa;
+  }
+
+  /* Header mobile */
+  .topbar{
+    background:rgba(255,255,255,.96);
+    border:1px solid #e2eaf3;
+    border-radius:14px;
+    padding:10px 10px!important;
+    box-shadow:0 4px 18px rgba(15,45,85,.06);
+    backdrop-filter:blur(12px);
+  }
+  html[data-theme="dark"] .topbar{
+    background:rgba(10,25,44,.96);
+    border-color:#1d3553;
+  }
+  .mobile-menu-btn{
+    border:0!important;
+    background:#0b74e5!important;
+    color:#fff!important;
+    box-shadow:0 5px 14px rgba(11,116,229,.22)!important;
+    border-radius:10px!important;
+  }
+  .topbar .eyebrow{
+    color:#1682e8!important;
+    font-size:8px!important;
+    font-weight:800;
+    letter-spacing:.12em!important;
+  }
+  .topbar h1{
+    font-size:20px!important;
+    font-weight:800!important;
+    color:#10213d!important;
+  }
+  html[data-theme="dark"] .topbar h1{color:#edf5ff!important}
+  .top-actions .btn.primary{
+    background:#0b74e5!important;
+    box-shadow:0 5px 14px rgba(11,116,229,.2)!important;
+  }
+
+  /* Market strip */
+  .market-ticker{
+    background:#0a2250!important;
+    border-radius:12px!important;
+    padding:10px 12px!important;
+    box-shadow:0 7px 18px rgba(5,31,72,.12);
+  }
+  .market-live strong{font-size:11px!important}
+  .market-live small{font-size:9px!important;color:#9db2d0!important}
+  .ticker-items{margin-top:6px!important}
+
+  /* Main hero becomes a compact balance card */
+  .dashboard-hero,
+  .projection-hero{
+    display:grid!important;
+    grid-template-columns:1fr!important;
+    gap:12px!important;
+    padding:17px!important;
+    border-radius:16px!important;
+    background:linear-gradient(135deg,#08285f,#0d5fc7)!important;
+    box-shadow:0 12px 26px rgba(8,40,95,.18)!important;
+  }
+  .dashboard-hero .kicker,
+  .projection-hero .kicker{
+    color:#9fc9ff!important;
+    font-size:9px!important;
+  }
+  .dashboard-hero h1,
+  .projection-hero h1{
+    font-size:25px!important;
+    margin:4px 0!important;
+    color:#fff!important;
+  }
+  .dashboard-hero p{
+    font-size:12px!important;
+    line-height:1.35!important;
+    color:#d8e8ff!important;
+    margin:0!important;
+  }
+  .hero-balance{
+    padding:13px!important;
+    border-radius:12px!important;
+    background:rgba(255,255,255,.10)!important;
+    border:1px solid rgba(255,255,255,.18)!important;
+  }
+  .hero-balance span{font-size:10px!important;color:#c5dcf7!important}
+  .hero-balance strong{font-size:29px!important;color:#fff!important}
+  .hero-balance small{font-size:10px!important;color:#bdd5ef!important}
+
+  /* KPI cards */
+  .dashboard-kpis{
+    gap:8px!important;
+  }
+  .dashboard-kpis .card,
+  .dashboard-kpis>div{
+    min-height:82px!important;
+    padding:13px!important;
+    border-radius:12px!important;
+    box-shadow:0 4px 14px rgba(16,43,78,.055)!important;
+  }
+  .dashboard-kpis .label,
+  .dashboard-kpis .kicker{font-size:8px!important}
+  .dashboard-kpis .value{font-size:19px!important}
+  .dashboard-kpis .sub{font-size:9px!important}
+
+  /* Daily plan = most important mobile block */
+  .daily-focus{
+    border:1px solid #cfe1f5!important;
+    border-left:4px solid #1682e8!important;
+    border-radius:14px!important;
+    padding:14px!important;
+    background:#fff!important;
+    box-shadow:0 7px 20px rgba(17,55,97,.07)!important;
+  }
+  html[data-theme="dark"] .daily-focus{
+    background:#0d1d32!important;
+    border-color:#244565!important;
+    border-left-color:#2b91f3!important;
+  }
+  .daily-focus .card-header{
+    margin-bottom:9px!important;
+  }
+  .daily-focus .card-header h2{font-size:16px!important}
+  .daily-focus .card-header p{
+    font-size:10px!important;
+    margin-top:2px!important;
+  }
+  .daily-focus .pill{font-size:8px!important}
+  .daily-focus-grid{
+    gap:7px!important;
+  }
+  .daily-focus-grid>div{
+    min-height:57px!important;
+    padding:10px!important;
+    border-radius:10px!important;
+    background:#f7faff!important;
+    border:1px solid #e3ebf5!important;
+  }
+  html[data-theme="dark"] .daily-focus-grid>div{
+    background:#0a192c!important;
+    border-color:#213c5b!important;
+  }
+  .daily-focus-grid .kicker{
+    font-size:7px!important;
+    letter-spacing:.1em!important;
+  }
+  .daily-focus-grid strong{
+    font-size:17px!important;
+    margin-top:2px!important;
+  }
+  .daily-focus-grid>div:nth-child(2) strong,
+  .daily-focus-grid>div:nth-child(3) strong{
+    color:#078b5a;
+  }
+
+  /* Secondary cards */
+  .card{
+    border-radius:13px!important;
+    box-shadow:0 4px 16px rgba(16,43,78,.055)!important;
+  }
+  .card-header h2{font-size:15px!important}
+  .card-header p{font-size:10px!important}
+  .accuracy-ring{
+    min-height:150px!important;
+  }
+  .accuracy-main{
+    width:110px!important;
+    height:110px!important;
+  }
+  .accuracy-main strong{font-size:21px!important}
+  .accuracy-stats strong{font-size:15px!important}
+  .accuracy-stats small{font-size:9px!important}
+
+  /* Projection */
+  .projection-hero{
+    grid-template-columns:1fr!important;
+  }
+  .projection-hero .hero-next{
+    padding:12px!important;
+    border-radius:11px!important;
+  }
+  .projection-hero .hero-next strong{font-size:24px!important}
+
+  /* Forms */
+  .field label{
+    font-size:10px!important;
+    font-weight:700!important;
+  }
+  .field input,.field select,.field textarea{
+    border-radius:9px!important;
+    font-size:14px!important;
+  }
+  .btn{
+    min-height:40px;
+    border-radius:9px!important;
+  }
+
+  /* Operational session cards */
+  .session-card,
+  .operation-card{
+    border-radius:13px!important;
+  }
+
+  /* Tables: preserve all data, but present as a clean scroll surface */
+  .table-wrap{
+    border:1px solid #e1e9f3!important;
+    border-radius:11px!important;
+    background:#fff!important;
+    box-shadow:none!important;
+  }
+  html[data-theme="dark"] .table-wrap{
+    border-color:#203b59!important;
+    background:#0b1a2d!important;
+  }
+  .table-wrap::-webkit-scrollbar{height:5px}
+  .table-wrap::-webkit-scrollbar-thumb{
+    background:#9eb9d8;
+    border-radius:10px;
+  }
+
+  /* Remove visual excess on mobile without deleting information */
+  .section-space{margin-top:10px!important}
+  .card-header .pill{white-space:nowrap}
+}
+
+/* Small phones: one strong information hierarchy */
+@media(max-width:480px){
+  .main{
+    padding-left:9px!important;
+    padding-right:9px!important;
+  }
+  .dashboard-kpis{
+    grid-template-columns:1fr 1fr!important;
+  }
+  .dashboard-kpis .value{font-size:17px!important}
+  .daily-focus-grid{
+    grid-template-columns:1fr 1fr!important;
+  }
+  .daily-focus-grid strong{font-size:16px!important}
+  .dashboard-hero h1{font-size:23px!important}
+  .hero-balance strong{font-size:27px!important}
+}
+
+/* Very small screens: avoid cramped two-column cards */
+@media(max-width:360px){
+  .dashboard-kpis,
+  .daily-focus-grid{
+    grid-template-columns:1fr!important;
+  }
+}
