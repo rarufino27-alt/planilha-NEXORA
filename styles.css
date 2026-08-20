@@ -897,3 +897,139 @@ html[data-theme="dark"] .mobile-menu-btn{background:#102642;border-color:#294667
   .app-shell{border-top-width:2px;border-bottom-width:2px}
   .sidebar{border-top-width:2px;border-bottom-width:2px}
 }
+
+/* =========================================================
+   V3.2 — Mobile navigation redesign
+   Desktop is intentionally untouched.
+   ========================================================= */
+.settings-page-head{
+  display:flex;align-items:center;justify-content:space-between;gap:18px;
+  padding:20px 22px;border-radius:16px;
+  background:linear-gradient(135deg,#071e4e,#0c5fc8);color:#fff;
+  box-shadow:0 12px 30px rgba(7,42,99,.14);
+}
+.settings-page-head h2{margin:4px 0;font-size:24px;color:#fff}
+.settings-page-head p{margin:0;color:#cfe1fa;font-size:12px}
+.settings-page-head .kicker{color:#9fc9ff;font-size:9px}
+.settings-path{padding:7px 10px;border:1px solid rgba(255,255,255,.2);border-radius:999px;font-size:10px;color:#dbeaff;white-space:nowrap}
+.settings-content{min-width:0}
+
+@media(max-width:900px){
+  /* Make the mobile drawer feel like a navigation panel, not a compressed desktop sidebar. */
+  .sidebar{
+    width:min(340px,88vw)!important;
+    padding:0!important;
+    background:#071b3d!important;
+    border-radius:0 18px 18px 0;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    box-shadow:22px 0 55px rgba(0,16,44,.38)!important;
+  }
+  .sidebar-mobile-head{
+    display:flex!important;
+    align-items:center;
+    justify-content:space-between;
+    padding:22px 18px 18px;
+    border-bottom:1px solid rgba(255,255,255,.11);
+    position:sticky;
+    top:0;
+    z-index:2;
+    background:#071b3d;
+  }
+  .sidebar-mobile-head span{
+    display:block;color:#9ab8df;font-size:8px;letter-spacing:.16em;font-weight:800;
+  }
+  .sidebar-mobile-head strong{
+    display:block;color:#fff;font-size:22px;letter-spacing:.08em;
+  }
+  .sidebar-mobile-close{
+    display:flex;align-items:center;justify-content:center;
+    width:38px;height:38px;border:1px solid rgba(255,255,255,.14);
+    border-radius:10px;background:rgba(255,255,255,.07);
+    color:#fff;font-size:25px;cursor:pointer;
+  }
+  .sidebar-nav-head{
+    padding:16px 18px 8px!important;
+  }
+  .sidebar-nav-head>span{font-size:8px!important;letter-spacing:.14em}
+  .sidebar-nav-head .sidebar-toggle{display:none}
+  .nav{
+    gap:3px!important;
+    padding:0 12px 12px;
+  }
+  .nav-item{
+    min-height:50px!important;
+    padding:12px 14px!important;
+    border-radius:11px!important;
+    font-size:14px!important;
+    font-weight:700!important;
+    background:transparent!important;
+    color:#dce9fb!important;
+  }
+  .nav-item.active{
+    background:linear-gradient(90deg,rgba(23,122,238,.9),rgba(15,87,190,.9))!important;
+    color:#fff!important;
+    box-shadow:0 6px 16px rgba(0,72,169,.22)!important;
+  }
+  .nav-item:hover{
+    background:rgba(255,255,255,.07)!important;
+    transform:none!important;
+  }
+  .settings-chevron{
+    font-size:22px!important;
+    opacity:.8;
+  }
+  .settings-subnav{
+    margin:0 8px 6px 22px!important;
+    padding:4px 0 5px 12px!important;
+    border-left:2px solid rgba(84,161,246,.45)!important;
+    gap:2px!important;
+  }
+  .nav-subitem{
+    min-height:42px!important;
+    padding:9px 12px!important;
+    font-size:13px!important;
+    color:#b9cde8!important;
+    border-radius:8px!important;
+  }
+  .nav-subitem:before{
+    content:"•";
+    color:#4d9cf2;
+    margin-right:8px;
+  }
+  .nav-subitem:hover,.nav-subitem.active{
+    background:rgba(255,255,255,.07)!important;
+    color:#fff!important;
+  }
+  .sidebar-tools{
+    margin-top:4px!important;
+    padding:14px 18px 20px!important;
+    border-top:1px solid rgba(255,255,255,.1)!important;
+    gap:7px!important;
+  }
+  .sidebar-tool{
+    min-height:42px!important;
+    border-radius:10px!important;
+    font-size:11px!important;
+  }
+
+  /* Remove the old settings tab presentation completely on mobile and desktop. */
+  .settings-page-head{
+    padding:16px!important;
+    border-radius:14px!important;
+    display:block!important;
+  }
+  .settings-page-head h2{font-size:19px!important}
+  .settings-page-head p{font-size:10px!important;line-height:1.4}
+  .settings-path{
+    display:inline-block!important;
+    margin-top:10px;
+    font-size:9px!important;
+  }
+  .settings-content .tabs{display:none!important}
+}
+
+@media(min-width:901px){
+  .sidebar-mobile-head{display:none}
+  .sidebar-mobile-close{display:none}
+}

@@ -343,3 +343,13 @@ Corrigida a normalização das tabelas de lote para aceitar e limpar registros a
 - Menu lateral possui rolagem vertical quando necessário.
 - Mobile/APK recebeu borda superior e inferior para delimitar visualmente a área útil.
 - Desktop mantém o visual principal e a mesma hierarquia de navegação.
+
+
+## V3.2 — Mobile UX + Configurações pelo menu
+
+- Refeito o menu mobile como painel de navegação dedicado, com largura adequada, hierarquia, título NEXORA e botão de fechamento.
+- Configurações agora funciona como item pai do menu.
+- Os subitens Geral, Gerenciamentos, Projeto, Perfis de Lote, Capital e Ativos são controlados exclusivamente pelo menu lateral.
+- Removida a antiga barra de tabs da página de Configurações.
+- Página de Configurações passa a mostrar somente o conteúdo da seção escolhida.
+- Desktop preserva o layout profissional existente.

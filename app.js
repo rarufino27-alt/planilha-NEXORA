@@ -417,6 +417,19 @@ function nav(){
     desktopToggle.title=collapsed?"Expandir menu":"Recolher menu";
   };
 
+  document.querySelectorAll("[data-settings-tab]").forEach(el=>el.onclick=e=>{
+    e.preventDefault(); e.stopPropagation();
+    window.currentSettingsTab=el.dataset.settingsTab;
+    state.settings.activeSettingsTab=el.dataset.settingsTab;
+    save();
+    currentView="settings";
+    render();
+    if(window.innerWidth<901) closeMobileMenu();
+  });
+
+  const mobileClose=document.getElementById("sidebar-mobile-close");
+  if(mobileClose)mobileClose.onclick=()=>closeMobileMenu();
+
   const mobileBtn=document.getElementById("mobile-menu-btn");
   if(mobileBtn)mobileBtn.onclick=()=>{
     const open=document.body.classList.toggle("mobile-menu-open");
@@ -1090,37 +1103,33 @@ function renderAssets(){
 }
 
 function renderSettings(){
-  const tab=state.settings.activeSettingsTab||"geral";
+  const tab=window.currentSettingsTab||state.settings.activeSettingsTab||"geral";
   normalizeLotRules();
 
-  const tabs=[
-    ["geral","⚙️","Geral","Gerenciamento e parâmetros"],
-    ["gerenciamentos","🎯","Gerenciamentos","Scalping, reversão e tendência"],
-    ["projeto","📌","Projeto","Meta principal e etapas"],
-    ["lotes","📊","Perfis de lote","Escalas de gerenciamento"],
-    ["capital","💵","Capital","Depósitos e saques"],
-    ["ativos","📈","Ativos","Instrumentos operacionais"]
-  ];
+  const titles={
+    geral:["Geral","Parâmetros gerais do gerenciamento"],
+    gerenciamentos:["Gerenciamentos","Scalping, reversão e continuação de tendência"],
+    projeto:["Projeto","Meta principal, etapas e projeção"],
+    lotes:["Perfis de Lote","Escalas de lote por capital"],
+    capital:["Capital","Depósitos, saques e histórico financeiro"],
+    ativos:["Ativos","Instrumentos disponíveis para operação"]
+  };
+  const [title,desc]=titles[tab]||titles.geral;
+  state.settings.activeSettingsTab=tab;
 
   document.getElementById("view-settings").innerHTML=`
-    <div class="card">
-      <div class="card-header">
-        <div><h2>Configurações</h2><p>Todos os parâmetros administrativos e de gerenciamento da Nexora ficam centralizados aqui.</p></div>
+    <div class="settings-page-head">
+      <div>
+        <span class="kicker">CENTRAL ADMINISTRATIVA</span>
+        <h2>Configurações · ${title}</h2>
+        <p>${desc}</p>
       </div>
-      <div class="tabs">
-        ${tabs.map(([id,icon,label,desc])=>`<button class="tab-btn ${tab===id?"active":""}" data-settings-tab="${id}"><span class="tab-icon">${icon}</span><span class="tab-copy"><strong>${label}</strong><small>${desc}</small></span></button>`).join("")}
-      </div>
+      <span class="settings-path">Configurações / ${title}</span>
     </div>
-    <div class="section-space">${renderSettingsTab(tab)}</div>`;
-
-  document.querySelectorAll("[data-settings-tab]").forEach(btn=>btn.onclick=()=>{
-    state.settings.activeSettingsTab=btn.dataset.settingsTab;
-    save();render();
-  });
+    <div class="section-space settings-content">${renderSettingsTab(tab)}</div>`;
 
   bindSettingsTab(tab);
 }
-
 function renderSettingsTab(tab){
   if(tab==="geral"){
     const suggestion=lotSuggestion(state.settings.currentBalance,state.settings.defaultProfile);
