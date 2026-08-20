@@ -303,3 +303,12 @@ Corrigida a normalização das tabelas de lote para aceitar e limpar registros a
 - Tabelas permanecem horizontalmente roláveis quando a quantidade de colunas exige isso.
 - Dashboard, Projeções, Sessão Operacional e Configurações recebem layout mobile específico.
 - Mantido o menu lateral completo no celular; não há mais uma barra lateral estreita e inutilizável ocupando parte da tela.
+
+
+## V2.8 — Correção crítica do APK/WebView
+
+- Corrigido o menu lateral que estava entrando no fluxo normal da página no APK.
+- O drawer mobile agora é sempre `position: fixed`, ocupando somente a lateral quando aberto.
+- O conteúdo principal inicia imediatamente após a área segura do dispositivo, sem o grande espaço vazio causado pela altura do menu.
+- Aplicada compatibilidade com `100dvh` e safe-area do Android.
+- Mantido o mesmo comportamento do navegador/desktop.

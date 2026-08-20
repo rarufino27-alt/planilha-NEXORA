@@ -455,3 +455,55 @@ html[data-theme="dark"] .mobile-menu-btn{background:#102642;border-color:#294667
   .dashboard-kpis{grid-template-columns:repeat(4,1fr)}
   .daily-focus-grid{grid-template-columns:repeat(3,1fr)}
 }
+
+/* Nexora V2.8 — WebView/APK viewport correction
+   Critical: the mobile drawer must be fixed, never part of document flow. */
+@media(max-width:900px){
+  .sidebar{
+    position:fixed!important;
+    left:0!important;
+    top:0!important;
+    bottom:0!important;
+    height:100dvh!important;
+    max-height:100dvh!important;
+    width:282px!important;
+    margin:0!important;
+    z-index:1000!important;
+    transform:translate3d(-105%,0,0);
+    overflow-y:auto;
+    overflow-x:hidden;
+  }
+  .mobile-menu-open .sidebar{
+    transform:translate3d(0,0,0);
+  }
+  .main{
+    position:relative;
+    margin:0!important;
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    padding:calc(14px + env(safe-area-inset-top, 0px)) 14px calc(34px + env(safe-area-inset-bottom, 0px))!important;
+  }
+  .app-shell{
+    display:block!important;
+    width:100%!important;
+    min-height:100dvh;
+  }
+  .topbar{
+    width:100%!important;
+    min-width:0!important;
+    margin:0 0 16px!important;
+  }
+  .mobile-menu-open:before{
+    position:fixed!important;
+    z-index:999!important;
+    inset:0!important;
+  }
+}
+@media(max-width:480px){
+  .main{
+    padding-left:10px!important;
+    padding-right:10px!important;
+    padding-top:calc(12px + env(safe-area-inset-top, 0px))!important;
+  }
+}
