@@ -30,8 +30,15 @@
         <button class="nav-item" data-view="session"><span class="nav-label">Sessão Operacional</span></button>
         <button class="nav-item" data-view="operations"><span class="nav-label">Operações</span></button>
         <button class="nav-item" data-view="journal"><span class="nav-label">Diário Operacional</span></button>
-        <button class="nav-item" data-view="settings"><span class="nav-label">Configurações</span></button>
-        <button class="nav-item" data-view="calculator"><span class="nav-label">Calculadora</span></button>
+        <button class="nav-item nav-settings-parent" data-view="settings" id="settings-nav-toggle" aria-expanded="false"><span class="nav-label">Configurações</span><span class="settings-chevron">›</span></button>
+        <div class="settings-subnav" id="settings-subnav" hidden>
+          <button class="nav-subitem" data-settings-tab="geral">Geral</button>
+          <button class="nav-subitem" data-settings-tab="gerenciamentos">Gerenciamentos</button>
+          <button class="nav-subitem" data-settings-tab="projeto">Projeto</button>
+          <button class="nav-subitem" data-settings-tab="lotes">Perfis de Lote</button>
+          <button class="nav-subitem" data-settings-tab="capital">Capital</button>
+          <button class="nav-subitem" data-settings-tab="ativos">Ativos</button>
+        </div>
       </nav>
 
       <div class="sidebar-tools">

@@ -359,7 +359,7 @@ function render(){
   const target=document.getElementById(`view-${currentView}`); if(target) target.classList.add("active");
   document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===currentView));
   document.getElementById("page-title").textContent={
-    dashboard:"Visão Geral",session:"Sessão Operacional",operations:"Registro de Operações",calculator:"Calculadora",
+    dashboard:"Visão Geral",session:"Sessão Operacional",operations:"Registro de Operações",
     projection:"Projeções e Objetivos",journal:"Diário Operacional",performance:"Performance",capital:"Capital",
     assets:"Ativos",settings:"Central de Configurações"
   }[currentView];
@@ -371,23 +371,46 @@ function render(){
 }
 
 function nav(){
-  document.querySelectorAll("[data-view]").forEach(el=>el.onclick=()=>{
-    currentView=el.dataset.view;
+  document.querySelectorAll("[data-view]").forEach(el=>el.onclick=e=>{
+    const view=el.dataset.view;
+    if(view==="settings"){
+      e.preventDefault();
+      const sub=document.getElementById("settings-subnav");
+      const toggle=document.getElementById("settings-nav-toggle");
+      if(sub){
+        const opening=sub.hidden;
+        sub.hidden=!opening;
+        if(toggle){
+          toggle.setAttribute("aria-expanded",opening?"true":"false");
+          toggle.classList.toggle("expanded",opening);
+        }
+      }
+      currentView="settings";
+      render();
+      if(window.innerWidth<901) closeMobileMenu();
+      return;
+    }
+    currentView=view;
     render();
     if(window.innerWidth<901) closeMobileMenu();
   });
-  document.querySelectorAll("[data-view-target]").forEach(el=>el.onclick=()=>{
-    currentView=el.dataset.viewTarget;
+
+  document.querySelectorAll("[data-settings-tab]").forEach(el=>el.onclick=e=>{
+    e.stopPropagation();
+    currentView="settings";
+    window.currentSettingsTab=el.dataset.settingsTab;
     render();
+    if(window.innerWidth<901) closeMobileMenu();
+  });
+
+  document.querySelectorAll("[data-view-target]").forEach(el=>el.onclick=()=>{
+    currentView=el.dataset.viewTarget;render();
     if(window.innerWidth<901) closeMobileMenu();
   });
 
   const desktopToggle=document.getElementById("sidebar-toggle");
   if(desktopToggle)desktopToggle.onclick=()=>{
-    if(window.innerWidth<901){
-      closeMobileMenu();
-      return;
-    }
+    if(window.innerWidth<901){closeMobileMenu();return;}
     document.body.classList.toggle("sidebar-collapsed");
     const collapsed=document.body.classList.contains("sidebar-collapsed");
     desktopToggle.textContent=collapsed?"›":"‹";
@@ -402,17 +425,21 @@ function nav(){
     mobileBtn.textContent=open?"×":"☰";
   };
 
-  // Fecha o drawer ao tocar fora dele.
-  document.addEventListener("click",e=>{
-    if(window.innerWidth<901 &&
-       document.body.classList.contains("mobile-menu-open") &&
-       !e.target.closest(".sidebar") &&
-       !e.target.closest("#mobile-menu-btn")){
-      closeMobileMenu();
-    }
-  });
-
+  if(!window.__nexoraOutsideClick){
+    document.addEventListener("click",e=>{
+      if(window.innerWidth<901 &&
+         document.body.classList.contains("mobile-menu-open") &&
+         !e.target.closest(".sidebar") &&
+         !e.target.closest("#mobile-menu-btn")) closeMobileMenu();
+    });
+    window.__nexoraOutsideClick=true;
+  }
   setupTheme();
+}
+function closeMobileMenu(){
+  document.body.classList.remove("mobile-menu-open");
+  const b=document.getElementById("mobile-menu-btn");
+  if(b){b.textContent="☰";b.setAttribute("aria-expanded","false");b.setAttribute("aria-label","Abrir menu");}
 }
 function closeMobileMenu(){
   document.body.classList.remove("mobile-menu-open");

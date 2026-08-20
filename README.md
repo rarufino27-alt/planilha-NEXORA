@@ -332,3 +332,14 @@ Corrigida a normalização das tabelas de lote para aceitar e limpar registros a
 - Reduzidos textos e elementos decorativos sem remover informações funcionais.
 - Cards, projeção diária, indicadores, formulários e tabelas foram refinados para toque e leitura rápida.
 - Mantido o menu hambúrguer da V2.9.
+
+
+## V3.1 — Menu hierárquico e navegação
+
+- Calculadora removida do menu e da experiência do aplicativo.
+- Menu principal passa a ficar sempre em coluna, uma opção abaixo da outra.
+- Configurações ganhou submenu oculto até ser selecionado.
+- Subitens: Geral, Gerenciamentos, Projeto, Perfis de Lote, Capital e Ativos.
+- Menu lateral possui rolagem vertical quando necessário.
+- Mobile/APK recebeu borda superior e inferior para delimitar visualmente a área útil.
+- Desktop mantém o visual principal e a mesma hierarquia de navegação.
